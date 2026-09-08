@@ -17,8 +17,8 @@ DATA_DESC
 }
 
 sub edgeDescription {
-	my($value) = @_;
-	
+	my($value, $version) = @_;
+
 	my $subject = addLinkout($value->{'subject_name'}, $value->{'subject'});
 	my $object = addLinkout($value->{'object_name'}, $value->{'object'});
 	my $verb = "treating";
@@ -27,11 +27,21 @@ sub edgeDescription {
 	}
 	my $relation = "has been used for $verb";
 	$relation = "has been approved for $verb" if $value->{'predicate'} eq 'biolink:treats';
-	$relation = "is contraindicated for patients with" if $value->{'predicate'} eq 'biolink:contraindicated_for';
+	$relation = "is contraindicated for patients with" if $value->{'predicate'} =~ /^biolink:contraindicated/;
 	#my $relation = ($value->{'predicate'} eq 'biolink:treats' ? "approved" : "used, off-label,");
 
+	my $context = "";
+	if ($version gt '1.0.0' && $value->{'disease_context_qualifier'}) {
+		my $name;
+		if (ref($value->{'supporting_text'}) eq 'ARRAY') {
+			($name) = map { /^disease_context_qualifier_name:\s*(.+)/ ? $1 : () } @{$value->{'supporting_text'}};
+		}
+		my $qualifier = addLinkout($name, $value->{'disease_context_qualifier'});
+		$context = " in the context of $qualifier";
+	}
+
 	my $text = <<"EDGE_DESC";
-This relationship states that $subject $relation $object.
+This relationship states that $subject $relation $object$context.
 EDGE_DESC
 
 	return $text;
