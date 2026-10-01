@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Every step is a Makefile target, so CI and `make check` cannot drift.
+# Jobs are independent (no `needs`) and run in parallel.
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+      - name: gofumpt
+        run: go install mvdan.cc/gofumpt@v0.12.0 && make go-fmt-check
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9.3.0
+        with:
+          version: v2.14.0
+          working-directory: cli
+      - name: Test (race, offline)
+        run: make go-test
+      - name: Fuzz smoke
+        run: cd cli && go test -run='^$' -fuzz=FuzzDelta -fuzztime=10s ./internal/codec/
+
+  elixir:
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: erlef/setup-beam@v1.24.1
+        id: beam
+        with:
+          otp-version: "28"
+          elixir-version: "1.19"
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            web/deps
+            web/_build
+          key: mix-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('web/mix.lock') }}
+          restore-keys: mix-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+      - run: cd web && mix deps.get
+      - run: make ex-fmt-check
+      - run: make ex-compile
+      - run: make ex-lint
+      - run: make ex-test
+      - run: make kgs-check
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+      - uses: erlef/setup-beam@v1.24.1
+        with:
+          otp-version: "28"
+          elixir-version: "1.19"
+      - run: cd docs && mix deps.get && cd ../web && mix deps.get
+      - run: make docs-check
+
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: j178/prek-action@v3.0.0
+        with:
+          extra-args: --all-files --hook-stage pre-commit --skip gofumpt --skip mix-format

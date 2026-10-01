@@ -1,2 +1,35 @@
-kginfo_logfile.txt
-KGinfo_old
+# Secrets: direnv files are never committed (the real values live in ~/.envrc).
+.envrc
+.direnv/
+
+# Go
+/cli/bin/
+/cli/dist/
+*.test
+*.out
+coverage.*
+
+# Elixir / Phoenix
+/web/_build/
+/web/deps/
+/web/priv/static/assets/
+/web/priv/static/cache_manifest.json
+/web/tmp/
+/docs/_build/
+/docs/deps/
+/docs/doc/
+erl_crash.dump
+*.ez
+
+# Local data: real KG dumps are never committed; only cli/testdata fixtures are.
+*.ndjson.gz
+/data/
+/tmp/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+.elixir_ls/
+.lexical/
+/legacy/

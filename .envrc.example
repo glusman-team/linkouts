@@ -1,0 +1,25 @@
+# Copy to .envrc (gitignored) and `direnv allow`.
+#
+# Secrets are NOT stored here. They are inherited from a parent .envrc (e.g. ~/.envrc)
+# via source_up, which must export:
+#   COSMOS_PRIMARY_CONNECTION_STRING_RW   "AccountEndpoint=https://<acct>.documents.azure.com:443/;AccountKey=<rw key>;"
+#   COSMOS_PRIMARY_CONNECTION_STRING_R    same shape, read-only key (the web app only ever uses this)
+# Azure Portal -> Cosmos account -> Settings -> Keys -> "PRIMARY CONNECTION STRING".
+source_up_if_exists
+
+# --- Cosmos layout (not secret)
+export COSMOS_DB=edge_linkouts
+export COSMOS_CONTAINER=edges
+
+# --- RU budgets: 45% of the 1000 RU/s free tier per app, 10% headroom
+export RU_BUDGET_CLI=450
+export RU_BUDGET_WEB=450
+
+# --- Embedded ClickHouse (chDB): extracted engine lives here; must be private (0700)
+export CHDB_CACHE_DIR="$HOME/.cache/edge-linkouts/chdb"
+
+# --- Web (local dev uses the file backend; prod values live in `fly secrets`)
+export PHX_HOST=linkouts.skyelanegoetz.com
+export FLY_APP=edge-linkouts
+export FLY_REGION=lax
+# SECRET_KEY_BASE is only needed in prod: `fly secrets set SECRET_KEY_BASE=$(mix phx.gen.secret)`

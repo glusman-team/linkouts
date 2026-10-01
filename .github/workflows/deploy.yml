@@ -1,0 +1,26 @@
+# DORMANT until PLAN.md STOP 4: needs the FLY_API_TOKEN repo secret
+# (`fly tokens create deploy -x 90d`). Path-filtered so CLI-only changes don't redeploy.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths: [web/**, kgs/**, Dockerfile, fly.toml, .github/workflows/deploy.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-fly
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: superfly/flyctl-actions/setup-flyctl@1.6
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
