@@ -271,7 +271,7 @@ This pass: **build and verify locally, no deployment, no cloud bill.** All work 
 - [x] **2.6** `web`: minimal `phx.new` + the dep deletions, built-in `JSON`, Cosmos behaviour + Finch/HMAC client + **file backend** + fake, atomics limiter, dedupe, codec + cross-language contract test.
 - [x] **2.7** `kgs/` + display engine: schema, loader, template compiler, formatters, `_prefixes.exs`, `mix linkouts.check`; port the six KGs (drug approvals first, from the fixtures).
 - [x] **2.8** UI: EdgeLive / HomeLive / `/random`, SVG diagram, evidence panel, version switcher + diff, KGX download, dark mode, a11y. Delete `KGinfo.pl`, `KGindexQuery.py`, `KGinfo/`. ExDoc project + guides + generated CLI reference.
-- [ ] **2.9** ⛔ **STOP 3 — optional real-account smoke test; I ask before touching Cosmos.** If `.envrc` has keys and you say go: `linkouts init` → `linkouts probe --n 20` → load the 6 fixture edges as two versions → open them in a locally running `mix phx.server` using the read-only key. Roughly 50 RU against the free tier, so no cost — but it is a real write to your account, so it waits for your yes.
+- [x] **2.9** ⛔ **STOP 3 — optional real-account smoke test; I ask before touching Cosmos.** If `.envrc` has keys and you say go: `linkouts init` → `linkouts probe --n 20` → load the 6 fixture edges as two versions → open them in a locally running `mix phx.server` using the read-only key. Roughly 50 RU against the free tier, so no cost — but it is a real write to your account, so it waits for your yes.
 
 ### Phase 3 — deployment (later pass, on your signal)
 
