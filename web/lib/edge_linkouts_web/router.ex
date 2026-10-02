@@ -17,11 +17,14 @@ defmodule EdgeLinkoutsWeb.Router do
   scope "/", EdgeLinkoutsWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
-  end
+    live "/", HomeLive
+    live "/edges/:id", EdgeLive
 
-  # Other scopes may use custom stacks.
-  # scope "/api", EdgeLinkoutsWeb do
-  #   pipe_through :api
-  # end
+    get "/random", RandomController, :random
+
+    # A controller rather than a LiveView: a file download needs a real HTTP response
+    # carrying Content-Disposition, which a LiveView cannot produce for a top-level
+    # navigation.
+    get "/edges/:id/download", EdgeController, :download
+  end
 end

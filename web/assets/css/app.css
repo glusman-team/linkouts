@@ -102,4 +102,54 @@
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
+/* ------------------------------------------------------------------ EdgeLinkouts */
+
+/* Visible keyboard focus in both themes. */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Inline SVG relationship diagram. Colors come from the active daisyUI theme
+   variables, so the same markup works under [data-theme=dark] and light. */
+.edge-diagram-box {
+  fill: var(--color-base-200);
+  stroke: var(--color-neutral);
+  stroke-width: 1.5;
+}
+.edge-diagram-name {
+  fill: var(--color-base-content);
+  font-size: 15px;
+  font-weight: 600;
+}
+.edge-diagram-curie {
+  fill: var(--color-base-content);
+  font-size: 12px;
+  opacity: 0.75;
+}
+.edge-diagram-line {
+  stroke: var(--color-base-content);
+  stroke-width: 1.5;
+}
+.edge-diagram-arrow {
+  fill: var(--color-base-content);
+}
+.edge-diagram-predicate {
+  fill: var(--color-base-content);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* Version diff. Color is never the only signal: every line also carries a +/- marker
+   in the markup and a visually-hidden word (added/removed/changed) for screen readers. */
+.diff-line-added {
+  color: var(--color-success);
+}
+.diff-line-removed {
+  color: var(--color-error);
+}
+.diff-line-changed {
+  color: var(--color-base-content);
+}
+
 /* This file is for your main application CSS */

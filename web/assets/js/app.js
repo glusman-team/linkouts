@@ -25,11 +25,42 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/edge_linkouts"
 import topbar from "../vendor/topbar"
 
+// Dark mode toggle (lib/edge_linkouts_web/components/layouts.ex): flips data-theme on
+// <html> and persists it. The root layout's inline script applied the initial theme
+// before first paint; while nothing is stored, OS preference changes still apply.
+const Theme = {
+  mounted() {
+    const media = window.matchMedia("(prefers-color-scheme: dark)")
+    media.addEventListener("change", (event) => {
+      if (!localStorage.getItem("theme")) {
+        document.documentElement.setAttribute("data-theme", event.matches ? "dark" : "light")
+      }
+    })
+
+    this.el.addEventListener("click", () => {
+      const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark"
+      localStorage.setItem("theme", next)
+      document.documentElement.setAttribute("data-theme", next)
+    })
+  },
+}
+
+// Copy affordance for static text, fired with JS.dispatch("edgelinkouts:copy",
+// to: "#element"). The event is dispatched on the target element, so its textContent
+// is what gets copied.
+window.addEventListener("edgelinkouts:copy", (event) => {
+  if ("clipboard" in navigator) {
+    navigator.clipboard.writeText(event.target.textContent)
+  } else {
+    console.warn("copy to clipboard is not supported in this browser")
+  }
+})
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  hooks: {...colocatedHooks, Theme},
 })
 
 // Show progress bar on live navigation and form submits

@@ -1,0 +1,111 @@
+<Layouts.app flash={@flash}>
+  <%= case @view do %>
+    <% :ok -> %>
+      <article class="space-y-6">
+        <header class="space-y-2">
+          <h1 class="text-2xl font-bold">
+            <%= if @config && @config.url do %>
+              <a class="link link-hover" href={@config.url}>{@kg_name}</a>
+            <% else %>
+              {@kg_name}
+            <% end %>
+          </h1>
+          <p>
+            Version <strong>{@key}</strong>
+          </p>
+          <p class="flex items-center gap-2">
+            <code id="edge-id" class="rounded bg-base-200 px-2 py-1 text-sm">{@edge_id}</code>
+            <button
+              type="button"
+              class="btn btn-xs btn-outline"
+              phx-click={JS.dispatch("edgelinkouts:copy", to: "#edge-id")}
+            >
+              Copy id
+            </button>
+          </p>
+        </header>
+
+        <div id="edge-detail" aria-live="polite" class="space-y-8">
+          <section aria-label="The relationship" class="card bg-base-200 p-4 space-y-4">
+            <%= if @sentence do %>
+              <p class="text-lg leading-relaxed">
+                <EdgeComponents.segments segments={@sentence} />
+              </p>
+            <% else %>
+              <EdgeComponents.raw_doc doc={@doc} />
+            <% end %>
+            <EdgeComponents.diagram doc={@doc} />
+          </section>
+
+          <EdgeComponents.version_switcher edge_id={@edge_id} versions={@versions} current={@key} />
+
+          <EdgeComponents.diff_panel prev_key={@prev_key} diff={@diff} />
+
+          <%= if @evidence != [] do %>
+            <section aria-label="Evidence">
+              <h2 class="text-lg font-semibold">Evidence</h2>
+              <dl class="divide-y divide-base-300">
+                <div
+                  :for={row <- @evidence}
+                  class="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[minmax(14rem,auto)_1fr]"
+                >
+                  <dt class="font-medium">
+                    <EdgeComponents.segments segments={row.label} />
+                  </dt>
+                  <dd>
+                    <EdgeComponents.segments segments={row.value} />
+                  </dd>
+                </div>
+              </dl>
+            </section>
+          <% end %>
+
+          <%= if @feedback_url do %>
+            <footer>
+              <a class="link" href={@feedback_url}>Something wrong with this relationship? Open an issue.</a>
+            </footer>
+          <% end %>
+        </div>
+      </article>
+    <% :rate_limited -> %>
+      <section aria-live="polite" class="card space-y-3 bg-warning/10 p-6">
+        <h1 class="text-xl font-bold">Rate limited</h1>
+        <p>
+          This read was rate limited because the knowledge graph store is at its request
+          budget. The window clears within a second; use the button to retry.
+        </p>
+        <button type="button" class="btn btn-primary" phx-click="retry">
+          Retry
+        </button>
+        <p>
+          <.link href={~p"/"}>Back to the knowledge graph list</.link>
+        </p>
+      </section>
+    <% :store_error -> %>
+      <section aria-live="polite" class="card space-y-3 bg-error/10 p-6">
+        <h1 class="text-xl font-bold">The store could not be reached</h1>
+        <p>
+          The knowledge graph store did not answer this read. That is usually temporary;
+          use the button to retry.
+        </p>
+        <button type="button" class="btn btn-primary" phx-click="retry">
+          Retry
+        </button>
+        <p>
+          <.link href={~p"/"}>Back to the knowledge graph list</.link>
+        </p>
+      </section>
+    <% {:corrupt, reason} -> %>
+      <section aria-live="polite" class="card space-y-3 bg-error/10 p-6">
+        <h1 class="text-xl font-bold">Corrupt stored document</h1>
+        <p>
+          This edge document could not be decoded, so it cannot be displayed. That is a
+          data bug a curator needs to see, not a missing edge.
+        </p>
+        <p class="font-mono text-sm break-all">{reason}</p>
+        <p>
+          <.link href={~p"/"}>Back to the knowledge graph list</.link>
+        </p>
+      </section>
+  <% end %>
+</Layouts.app>

@@ -71,6 +71,10 @@ defmodule EdgeLinkouts.MixProject do
       # dns_cluster (no clustering), swoosh/req/gettext/ecto (see PLAN.md).
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:floki, "~> 0.38", only: :test},
+      # Phoenix.LiveViewTest (live/2, element/2) parses rendered HTML and hard-requires
+      # lazy_html: deps/phoenix_live_view/lib/phoenix_live_view/test/dom.ex raises
+      # "Phoenix LiveView requires lazy_html as a test dependency" without it.
+      {:lazy_html, ">= 0.1.0", only: :test},
       {:stream_data, "~> 1.2", only: :test}
     ]
   end

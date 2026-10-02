@@ -5,7 +5,11 @@ defmodule EdgeLinkoutsWeb.ErrorHTMLTest do
   import Phoenix.Template, only: [render_to_string: 4]
 
   test "renders 404.html" do
-    assert render_to_string(EdgeLinkoutsWeb.ErrorHTML, "404", "html", []) == "Not Found"
+    content = render_to_string(EdgeLinkoutsWeb.ErrorHTML, "404", "html", [])
+
+    assert content =~ "Page not found"
+    assert content =~ "edge id was not found"
+    assert content =~ ~s(href="/")
   end
 
   test "renders 500.html" do
