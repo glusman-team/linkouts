@@ -51,9 +51,16 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
       # documents into each other. Turn it on here to check what production does. Without the
       # cache this was two reads per page view, because the two mounts are sequential and
       # coalescing alone cannot merge them.
+      # The cleanup must clear the table as well as restore the ttl. Restoring the ttl alone leaves
+      # this test's cached document behind, and the next test reads it instead of the Fake.
+      # Seed 92193 caught that. The ExUnit case is async: false, so nothing else runs meanwhile.
       Dedupe.clear()
       :sys.replace_state(Dedupe, &%{&1 | ttl_ms: 30_000})
-      on_exit(fn -> :sys.replace_state(Dedupe, &%{&1 | ttl_ms: 0}) end)
+
+      on_exit(fn ->
+        :sys.replace_state(Dedupe, &%{&1 | ttl_ms: 0})
+        Dedupe.clear()
+      end)
 
       {:ok, _view, _html} = live(conn, "/edges/#{id}")
 
