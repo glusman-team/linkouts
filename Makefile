@@ -99,8 +99,12 @@ cli-docs: build ## Regenerate docs/cli/*.md from the cobra command tree
 docs: cli-docs ## Build the ExDoc site into docs/doc/
 	cd $(DOCS) && mix docs --warnings-as-errors
 
+# git diff alone misses a page for a brand-new command, because the file is untracked rather than
+# modified; the ls-files check catches that case.
 docs-check: cli-docs ## Fail if generated CLI docs are stale, then build the site
 	git diff --exit-code -- $(DOCS)/cli
+	@untracked="$$(git ls-files --others --exclude-standard -- $(DOCS)/cli)"; \
+	  if [ -n "$$untracked" ]; then echo "uncommitted generated CLI docs: $$untracked"; exit 1; fi
 	cd $(DOCS) && mix docs --warnings-as-errors
 
 # ---------------------------------------------------------------- fixtures

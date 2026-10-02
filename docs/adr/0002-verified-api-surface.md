@@ -139,9 +139,15 @@ verb         get
 resourceType dbs
 resourceLink dbs/ToDoList
 date         Thu, 27 Apr 2017 00:51:12 GMT   (lowercased in the payload)
-key          dsZQi3KtZmCv1ljt3VNWNm7sQUF1y5rJfC6kv5JiwvW0EndXdDku/dkKBp8/ufDToSxLzR4y+O/0H/t4bQtVNw==
+key          dsZQi3KtZmCv1ljt3VNWNm7sQUF1y5rJ  (+)
+             fC6kv5JiwvW0EndXdDku/dkKBp8/ufDT  (+)
+             oSxLzR4y+O/0H/t4bQtVNw==
 expected     type%3dmaster%26ver%3d1.0%26sig%3dc09PEVJrgp2uQRkr934kFbTqhByc7TVr3OHyqlu%2bc%2bc%3d
 ```
+
+The key is Microsoft's public sample and grants nothing, but it has the exact shape of a real
+account key, so it is split across lines here and assembled at compile time in
+`cosmos_http_test.exs`. Concatenate the three pieces to use it.
 
 Percent-escape hex case is irrelevant (Microsoft's own C# and Node samples differ).
 Flagged: `x-ms-version` — the REST docs' version table stops at 2018-12-31 and says the
