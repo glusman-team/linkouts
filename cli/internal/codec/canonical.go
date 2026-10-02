@@ -55,6 +55,22 @@ func Parse(b []byte) (Doc, error) {
 	return doc, nil
 }
 
+// ParseLenient decodes a JSON object without the null check. It exists for transport
+// envelopes — engine output rows, service responses — where a null means "this field was
+// absent" and the caller must translate that into a real error message. Document payloads
+// that get stored must go through Parse, which refuses nulls.
+func ParseLenient(b []byte) (Doc, error) {
+	var v any
+	if err := canon.Unmarshal(b, &v); err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+	doc, ok := asDocAny(v)
+	if !ok {
+		return nil, fmt.Errorf("decode: expected a JSON object, got %T", v)
+	}
+	return doc, nil
+}
+
 // ParseAny decodes any JSON value (object, array, scalar) and rejects nulls.
 func ParseAny(b []byte) (any, error) {
 	var v any
