@@ -11,6 +11,9 @@ import (
 	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
 )
 
+// errStop is the internal signal that ends eachNDJSON without being reported as a failure.
+var errStop = errors.New("stop")
+
 // Fake joins in pure Go. It produces exactly the Rows the chdb backend produces — including
 // an empty node document for an unmatched side — so the pipeline and every test above it can
 // run without extracting a 540 MiB engine. It indexes the whole nodes file in memory, which
@@ -51,14 +54,18 @@ func (f *Fake) Join(ctx context.Context, q Query, emit func(Row) error) error {
 			return fmt.Errorf("%s:%d: edge has no id (KGX records must carry one)", q.EdgesPath, line)
 		}
 		count++
-		return emit(Row{
+		emitErr := emit(Row{
 			ID:          id,
 			Edge:        edge,
 			SubjectNode: lookupNode(nodes, edge["subject"]),
 			ObjectNode:  lookupNode(nodes, edge["object"]),
 		})
+		if errors.Is(emitErr, ErrStop) {
+			return errStop
+		}
+		return emitErr
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errStop) {
 		return err
 	}
 	if count == 0 {
@@ -115,7 +122,7 @@ func eachNDJSON(path string, fn func(line int, raw []byte) error) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
-	defer fh.Close()
+	defer func() { _ = fh.Close() }()
 
 	sc := bufio.NewScanner(fh)
 	sc.Buffer(make([]byte, 0, 64*1024), 64*1024*1024)

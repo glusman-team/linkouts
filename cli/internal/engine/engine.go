@@ -8,11 +8,16 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 
 	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
 )
+
+// ErrStop ends a join cleanly. Returning it from an emit callback is how a caller that only
+// needs part of the stream says so; it is not an error and must not be reported as one.
+var ErrStop = errors.New("stop iteration")
 
 // Row is one joined edge: the edge document plus the node documents it points at. A node
 // that does not exist arrives as an empty Doc, never as nil and never as a JSON null — the

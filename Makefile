@@ -59,14 +59,15 @@ go-fmt-check: ## gofumpt diff check
 go-lint: ## golangci-lint (govet, staticcheck, errcheck, gosec, ...)
 	cd $(CLI) && golangci-lint run ./...
 
-go-test: ## go test -race (unit tests only; engine tests need -tags engine)
+go-test: ## go test -race over every package, including the embedded engine
 	cd $(CLI) && go test -race -count=1 ./...
 
-go-test-engine: ## go test against the embedded chdb engine (downloads ~117 MB once)
-	cd $(CLI) && go test -race -count=1 -tags engine ./internal/engine/...
+go-test-fast: ## go test -short: skips the embedded ClickHouse tests (~540 MiB extraction)
+	cd $(CLI) && go test -short -count=1 ./...
 
 go-fuzz: ## Long local fuzz run of the delta codec
-	cd $(CLI) && go test -run=^$$ -fuzz=FuzzDelta -fuzztime=2m ./internal/codec/
+	cd $(CLI) && go test -run=^$$ -fuzz=FuzzDeltaRoundTrip -fuzztime=2m ./internal/codec/
+	cd $(CLI) && go test -run=^$$ -fuzz=FuzzBlobRoundTrip -fuzztime=1m ./internal/codec/
 
 # ---------------------------------------------------------------- elixir
 
@@ -104,14 +105,38 @@ docs-check: cli-docs ## Fail if generated CLI docs are stale, then build the sit
 
 # ---------------------------------------------------------------- fixtures
 
-.PHONY: fixtures
+# Contract fixtures are generated with the pure-Go engine and no dictionary on purpose: they
+# must be reproducible on any machine without extracting the ~540 MiB ClickHouse payload, and
+# the Elixir contract test must be able to decode them with nothing but :zstd and JSON.
+# Two versions of the same six edges, so the delta path is exercised, not just the full path.
+FIXTURE_ENGINE := fake
+FIXTURE_STORE  := file:$(CLI)/testdata/contract/docs.ndjson
+FIXTURE_NODES  := $(CLI)/testdata/dakp/nodes.ndjson
+
+.PHONY: fixtures contract
 fixtures: build ## Re-extract test fixtures from the local DAKP sample (one-time, local)
 	DAKP_DIR="$(DAKP_DIR)" DAKP_OLD="$(DAKP_OLD)" DAKP_NEW="$(DAKP_NEW)" python3 scripts/extract_fixtures.py
-	$(BIN) load --nodes $(CLI)/testdata/dakp/nodes.ndjson --edges $(CLI)/testdata/dakp/edges.ndjson \
-	  --key drug-approvals-kg-1.11.2 --store file:$(CLI)/testdata/contract/docs.ndjson
-	$(BIN) load --nodes $(CLI)/testdata/dakp/nodes.ndjson --edges $(CLI)/testdata/dakp/edges.v2.ndjson \
-	  --key drug-approvals-kg-1.12.0 --store file:$(CLI)/testdata/contract/docs.ndjson
+	rm -f $(CLI)/testdata/contract/docs.ndjson $(CLI)/testdata/contract/docs.golden.ndjson
+	$(MAKE) --no-print-directory contract
+
+contract: build ## Regenerate the committed contract fixtures and their golden copy
+	mkdir -p $(CLI)/testdata/contract
+	$(BIN) load drug-approvals-kg-1.11.2 --nodes $(FIXTURE_NODES) \
+	  --edges $(CLI)/testdata/dakp/edges.ndjson --engine $(FIXTURE_ENGINE) \
+	  --store $(FIXTURE_STORE) --progress=false
+	$(BIN) load drug-approvals-kg-1.16.0 --nodes $(FIXTURE_NODES) \
+	  --edges $(CLI)/testdata/dakp/edges.v2.ndjson --engine $(FIXTURE_ENGINE) \
+	  --store $(FIXTURE_STORE) --progress=false
+	$(BIN) load drug-approvals-kg-1.16.0 --nodes $(FIXTURE_NODES) \
+	  --edges $(CLI)/testdata/dakp/edges.drift.ndjson --engine $(FIXTURE_ENGINE) \
+	  --store file:$(CLI)/testdata/contract/drift.ndjson --progress=false
+	$(BIN) load drug-approvals-kg-1.16.0 --nodes $(FIXTURE_NODES) \
+	  --edges $(CLI)/testdata/dakp/edges.unresolvable.ndjson --engine $(FIXTURE_ENGINE) \
+	  --store file:$(CLI)/testdata/contract/unresolvable.ndjson --progress=false
 	cp $(CLI)/testdata/contract/docs.ndjson $(CLI)/testdata/contract/docs.golden.ndjson
+	@echo "contract fixtures: $$(wc -l < $(CLI)/testdata/contract/docs.ndjson) documents"
+
+contract-test: contract ## Contract fixtures plus the Elixir reader that must agree with them
 	mkdir -p $(WEB)/test/fixtures/contract
 	cp $(CLI)/testdata/contract/*.ndjson $(WEB)/test/fixtures/contract/
 	cd $(WEB) && mix test test/contract_test.exs
@@ -134,17 +159,21 @@ check: ## Full offline gate (mirrors CI), fails past CHECK_BUDGET seconds
 	echo "make check: $${elapsed}s (budget $(CHECK_BUDGET)s)"; \
 	if [ $$elapsed -gt $(CHECK_BUDGET) ]; then echo "over budget"; exit 1; fi
 
+check-fast: ## Offline gate without the embedded-engine tests (for the pre-commit hook)
+	@$(MAKE) --no-print-directory go-fmt-check ex-fmt-check go-lint ex-compile go-test-fast
+
 precommit: ## Run every prek hook over the whole tree
 	prek run --all-files
 
 # ---------------------------------------------------------------- local run (no cloud)
 
 LOCAL_DOCS ?= $(CURDIR)/tmp/edges.local.ndjson
+LOCAL_KEY  ?= drug-approvals-kg-$(DAKP_OLD)
 
 .PHONY: local-load local-web
 local-load: build ## Encode the DAKP sample to a local docs file (no Cosmos, no RU)
 	mkdir -p tmp
-	$(BIN) load --nodes "$(DAKP_NODES)" --edges "$(DAKP_EDGES)" --store file:$(LOCAL_DOCS)
+	$(BIN) load "$(LOCAL_KEY)" --nodes "$(DAKP_NODES)" --edges "$(DAKP_EDGES)" --store file:$(LOCAL_DOCS)
 
 local-web: ## Run Phoenix against the local docs file (file backend, no Cosmos)
 	cd $(WEB) && COSMOS_BACKEND=file COSMOS_DOCS=$(LOCAL_DOCS) iex -S mix phx.server

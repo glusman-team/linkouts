@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
@@ -19,6 +20,15 @@ func testDoc(id string) Doc {
 // DefaultDictIDForTest keeps the tests honest about the omitted-zero case: a non-zero dict
 // id must survive a round trip, and a zero one must not appear in the stored JSON.
 const DefaultDictIDForTest = 0x454C4F31
+
+// closeStore fails the test if Close returns an error. The file store compacts and renames in
+// Close, so an unchecked Close can hide lost documents even in a test.
+func closeStore(t *testing.T, s Store) {
+	t.Helper()
+	if err := s.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+}
 
 func TestFileStoreRoundTripAndReopen(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "docs.ndjson")
@@ -52,7 +62,7 @@ func TestFileStoreRoundTripAndReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	defer reopened.Close()
+	defer closeStore(t, reopened)
 	again, err := reopened.Read(ctx, want.ID)
 	if err != nil {
 		t.Fatalf("Read after reopen: %v", err)
@@ -72,7 +82,7 @@ func TestFileStoreLastWriteWins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenFile: %v", err)
 	}
-	defer store.Close()
+	defer closeStore(t, store)
 
 	id := "11111111-1111-3111-8111-111111111111"
 	if err := store.Upsert(ctx, Doc{ID: id, Blob: "first"}); err != nil {
@@ -97,7 +107,7 @@ func TestFileStoreLastWriteWins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	defer reopened.Close()
+	defer closeStore(t, reopened)
 	after, err := reopened.Read(ctx, id)
 	if err != nil {
 		t.Fatalf("Read after reopen: %v", err)
@@ -113,7 +123,7 @@ func TestFileStoreCreateConflictAndReplacePrecondition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenFile: %v", err)
 	}
-	defer store.Close()
+	defer closeStore(t, store)
 
 	d := testDoc("22222222-2222-3222-8222-222222222222")
 	if err := store.Create(ctx, d); err != nil {
@@ -149,7 +159,7 @@ func TestFileStoreRejectsBadDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenFile: %v", err)
 	}
-	defer store.Close()
+	defer closeStore(t, store)
 
 	if err := store.Upsert(ctx, Doc{Blob: "x"}); err == nil {
 		t.Error("accepted a document with no id")
@@ -176,7 +186,7 @@ func TestFileStoreProvisionIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenFile: %v", err)
 	}
-	defer store.Close()
+	defer closeStore(t, store)
 	if err := store.Provision(context.Background()); err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
@@ -296,7 +306,7 @@ func TestOpenDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open file: %v", err)
 	}
-	defer file.Close()
+	defer closeStore(t, file)
 	if file.Name() != "file:"+filepath.Join(dir, "d.ndjson") {
 		t.Errorf("Name = %q", file.Name())
 	}
@@ -305,7 +315,7 @@ func TestOpenDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open mem: %v", err)
 	}
-	defer mem.Close()
+	defer closeStore(t, mem)
 
 	// No account configured must fail loudly rather than silently writing nowhere.
 	if _, err := Open(ctx, "cosmos", AzureConfig{}, nil); err == nil {
@@ -348,5 +358,63 @@ func TestRandomPoolIDIsReserved(t *testing.T) {
 	var uuid json.RawMessage = []byte(`"__random_pool__"`)
 	if string(uuid) != `"__random_pool__"` || RandomPoolID == "" {
 		t.Fatal("RandomPoolID must be a fixed reserved id")
+	}
+}
+
+func TestFileStoreCompactsOnClose(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "docs.ndjson")
+	ctx := context.Background()
+
+	store, err := OpenFile(path, nil)
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	// Three writes to two ids: append-only storage would keep all three lines.
+	if err := store.Upsert(ctx, Doc{ID: "b-id", Blob: "b1"}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if err := store.Upsert(ctx, Doc{ID: "a-id", Blob: "a1"}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if err := store.Upsert(ctx, Doc{ID: "b-id", Blob: "b2"}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("compacted file has %d lines, want one per document:\n%s", len(lines), raw)
+	}
+	// Sorted by id, so a regenerated golden fixture diffs only when the content changed.
+	if !strings.Contains(lines[0], `"id":"a-id"`) || !strings.Contains(lines[1], `"id":"b-id"`) {
+		t.Errorf("lines are not sorted by id:\n%s", raw)
+	}
+	if !strings.Contains(lines[1], `"b":"b2"`) {
+		t.Errorf("compaction kept a superseded document:\n%s", lines[1])
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Errorf("the temporary compaction file was left behind: %v", err)
+	}
+
+	reopened, err := OpenFile(path, nil)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer closeStore(t, reopened)
+	if reopened.Count() != 2 {
+		t.Errorf("Count = %d, want 2", reopened.Count())
+	}
+	got, err := reopened.Read(ctx, "b-id")
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got.Blob != "b2" {
+		t.Errorf("Blob = %q, want the newest write", got.Blob)
 	}
 }

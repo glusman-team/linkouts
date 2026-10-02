@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 
 	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
@@ -62,7 +63,9 @@ func (s *FileStore) load() error {
 		}
 		return fmt.Errorf("read %s: %w", s.path, err)
 	}
-	defer fh.Close()
+	// Read-only handle: nothing is buffered, so a Close failure cannot lose data.
+	defer func() { _ = fh.Close() }()
+
 	sc := bufio.NewScanner(fh)
 	sc.Buffer(make([]byte, 0, 64*1024), 32*1024*1024) // blobs can be large
 	line := 0
@@ -148,16 +151,77 @@ func (s *FileStore) Provision(context.Context) error {
 // Name reports the path, so logs show which file a run wrote to.
 func (s *FileStore) Name() string { return "file:" + s.path }
 
-// Close flushes and closes the append handle.
+// Close flushes the append handle and rewrites the file in compact form: one line per
+// document, sorted by id.
+//
+// Compaction matters for two reasons. Append-only storage keeps every superseded state, so a
+// file that has been loaded twice is twice as large and a reader that takes the first match
+// instead of the last gets a stale document. And a deterministic order makes the committed
+// contract fixtures diff-stable, so a golden-file change means the format changed rather than
+// that the run order did.
+//
+// The rewrite goes to a temporary file and is renamed into place, so an interrupted close
+// cannot leave a truncated store behind.
 func (s *FileStore) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.fh == nil {
 		return nil
 	}
-	err := s.fh.Close()
+	if err := s.fh.Close(); err != nil {
+		s.fh = nil
+		return err
+	}
 	s.fh = nil
-	return err
+	return s.compact()
+}
+
+// compact rewrites the file with the current documents only. Caller holds the write lock.
+func (s *FileStore) compact() error {
+	ids := make([]string, 0, len(s.docs))
+	for id := range s.docs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	tmp := s.path + ".tmp"
+	fh, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", tmp, err)
+	}
+	w := bufio.NewWriter(fh)
+	for _, id := range ids {
+		d := s.docs[id]
+		line, err := json.Marshal(struct {
+			ID     string `json:"id"`
+			Blob   string `json:"b"`
+			DictID uint32 `json:"d,omitempty"`
+		}{d.ID, d.Blob, d.DictID})
+		if err != nil {
+			_ = fh.Close()
+			_ = os.Remove(tmp)
+			return fmt.Errorf("%s: %w", id, err)
+		}
+		if _, err := w.Write(append(line, '\n')); err != nil {
+			_ = fh.Close()
+			_ = os.Remove(tmp)
+			return fmt.Errorf("write %s: %w", tmp, err)
+		}
+	}
+	if err := w.Flush(); err != nil {
+		_ = fh.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("flush %s: %w", tmp, err)
+	}
+	if err := fh.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, s.path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("replace %s: %w", s.path, err)
+	}
+	return nil
 }
 
 // Count is the number of distinct documents stored, for progress lines and tests.

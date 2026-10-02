@@ -177,8 +177,8 @@ func TestBuildJoinSQLQuotesPaths(t *testing.T) {
 func TestOpenDispatch(t *testing.T) {
 	if e, err := Open("fake", "", 0); err != nil || e.Name() == "" {
 		t.Errorf("Open(fake) = %v, %v", e, err)
-	} else {
-		e.Close()
+	} else if err := e.Close(); err != nil {
+		t.Errorf("Close: %v", err)
 	}
 	if _, err := Open("postgres", "", 0); err == nil {
 		t.Error("Open accepted an unknown backend")
@@ -226,7 +226,11 @@ func chdbEngine(t *testing.T) Engine {
 	if err != nil {
 		t.Skipf("embedded ClickHouse unavailable on this platform: %v", err)
 	}
-	t.Cleanup(func() { e.Close() })
+	t.Cleanup(func() {
+		if err := e.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
 	return e
 }
 

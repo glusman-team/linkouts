@@ -135,15 +135,7 @@ func (b *Blob) Encode(dict []byte, level int) (string, error) {
 	if b.Schema == "" {
 		b.Schema = SchemaVersion
 	}
-	raw, err := canon.Marshal(b)
-	if err != nil {
-		return "", fmt.Errorf("marshal blob: %w", err)
-	}
-	comp, err := Compress(raw, dict, level)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(comp), nil
+	return EncodeJSON(b, dict, level)
 }
 
 // DecodeBlob is the inverse of Encode.
@@ -187,8 +179,13 @@ func Compress(raw, dict []byte, level int) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("zstd encoder: %w", err)
 	}
-	defer enc.Close()
-	return enc.EncodeAll(raw, nil), nil
+	// EncodeAll buffers, so Close only has to release the encoder; it is still checked,
+	// because a Close failure here would mean the frame was never finished.
+	compressed := enc.EncodeAll(raw, nil)
+	if err := enc.Close(); err != nil {
+		return nil, fmt.Errorf("zstd encoder close: %w", err)
+	}
+	return compressed, nil
 }
 
 // Decompress is the inverse of Compress. dict must match what was used to compress; a
@@ -208,4 +205,48 @@ func Decompress(comp, dict []byte) ([]byte, error) {
 		return nil, fmt.Errorf("zstd decode: %w", err)
 	}
 	return out, nil
+}
+
+// PoolSchema identifies the reserved __random_pool__ document, which holds reservoir-sampled
+// edge ids rather than a version map. Indexing is off on this container, so a random pick
+// would otherwise be a cross-partition scan.
+const PoolSchema = "edgelinkouts.pool/1"
+
+// EncodeJSON is the generic form of Blob.Encode: base64(zstd(canonical JSON of v)). The pool
+// document and any future reserved documents use it so every stored frame is built the same
+// way and reads back with the same dictionary rules.
+func EncodeJSON(v any, dict []byte, level int) (string, error) {
+	raw, err := Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	comp, err := Compress(raw, dict, level)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(comp), nil
+}
+
+// DecodeJSON is the inverse of EncodeJSON.
+func DecodeJSON(encoded string, dict []byte, v any) error {
+	comp, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return fmt.Errorf("payload is not valid base64: %w", err)
+	}
+	raw, err := Decompress(comp, dict)
+	if err != nil {
+		return err
+	}
+	if err := canon.Unmarshal(raw, v); err != nil {
+		return fmt.Errorf("unmarshal payload: %w", err)
+	}
+	return nil
+}
+
+// Pool is the reserved document that backs /random.
+type Pool struct {
+	Schema    string   `json:"schema"`
+	Key       string   `json:"key"`
+	SampledAt string   `json:"sampled_at"`
+	IDs       []string `json:"ids"`
 }

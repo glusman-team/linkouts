@@ -76,7 +76,11 @@ func TestTokenBucketPacesSpend(t *testing.T) {
 func TestTokenBucketChunksChargesAboveBurst(t *testing.T) {
 	// A single write of a 30 KB document can cost more RU than the burst allows. rate.Limiter
 	// errors when n exceeds the burst, so Take must slice the charge instead of failing.
-	b := New(1000).(*TokenBucket)
+	tb, ok := New(1000).(*TokenBucket)
+	if !ok {
+		t.Fatal("New(1000) did not return a token bucket")
+	}
+	b := tb
 	if b.burst != 1000 {
 		t.Fatalf("burst = %d, want 1000", b.burst)
 	}
@@ -147,9 +151,18 @@ func TestEffectiveRUps(t *testing.T) {
 	}
 }
 
-func TestBudgetInterfaceSatisfied(t *testing.T) {
-	// Both implementations must stay substitutable, or the store would need to know which
-	// one it holds.
-	var _ Budget = New(100)
-	var _ Budget = NewUnlimited()
+func TestBudgetImplementationsAreSubstitutable(t *testing.T) {
+	// The store takes a Budget and must not need to know which one it holds, so both are
+	// driven through the interface here.
+	for name, b := range map[string]Budget{"paced": New(100000), "free": NewUnlimited()} {
+		if err := b.Take(context.Background(), 5); err != nil {
+			t.Errorf("%s: Take: %v", name, err)
+		}
+		if b.Consumed() != 5 {
+			t.Errorf("%s: Consumed = %v, want 5", name, b.Consumed())
+		}
+		if b.Rate() <= 0 {
+			t.Errorf("%s: Rate = %v, want a positive ceiling", name, b.Rate())
+		}
+	}
 }

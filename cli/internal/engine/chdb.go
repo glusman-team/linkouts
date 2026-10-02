@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -115,6 +116,9 @@ func (c *Chdb) Join(ctx context.Context, q Query, emit func(Row) error) error {
 			rows++
 			if err := emit(row); err != nil {
 				chunk.Free()
+				if errors.Is(err, ErrStop) {
+					return nil
+				}
 				return err
 			}
 		}
@@ -129,6 +133,9 @@ func (c *Chdb) Join(ctx context.Context, q Query, emit func(Row) error) error {
 		}
 		rows++
 		if err := emit(row); err != nil {
+			if errors.Is(err, ErrStop) {
+				return nil
+			}
 			return err
 		}
 	}
