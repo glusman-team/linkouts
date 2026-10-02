@@ -89,18 +89,23 @@ func (s *AzureStore) Provision(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("database handle %s: %w", s.cfg.Database, err)
 	}
-	// Indexing is off for everything but id: this workload is point reads only, and every
-	// indexed path is RU charged on every write.
+	// Indexing is off entirely: this workload is point reads by id only, which need no index,
+	// and every indexed path is RU charged on every write. Cosmos rejects path lists when the
+	// mode is none — the live account answered BadRequest, "IndexingPolicy Paths are not
+	// allowed when indexing mode is set to 'none'." — so the policy carries no paths at all.
 	indexing := &azcosmos.IndexingPolicy{
-		Automatic:     false,
-		IndexingMode:  azcosmos.IndexingModeNone,
-		ExcludedPaths: []azcosmos.ExcludedPath{{Path: "/*"}},
+		Automatic:    false,
+		IndexingMode: azcosmos.IndexingModeNone,
 	}
 	_, err = db.CreateContainer(ctx, azcosmos.ContainerProperties{
 		ID:                     s.cfg.Container,
 		PartitionKeyDefinition: azcosmos.PartitionKeyDefinition{Paths: []string{config.PartitionKeyPath}},
 		IndexingPolicy:         indexing,
-	}, &azcosmos.CreateContainerOptions{ThroughputProperties: &throughput})
+	}, nil)
+	// No ThroughputProperties here: the container shares the database's provisioned throughput.
+	// The free-tier account caps TOTAL account throughput at 1000 RU/s, so provisioning the
+	// container separately doubled the ask and Cosmos refused. The CLI and web rate limiters
+	// already partition that 1000 in software (COSMOS_RU_BUDGET_CLI / _WEB).
 	if err != nil && !errors.Is(mapError(err), ErrConflict) {
 		return fmt.Errorf("create container %s: %w", s.cfg.Container, mapError(err))
 	}

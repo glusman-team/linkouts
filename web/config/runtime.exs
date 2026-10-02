@@ -69,12 +69,14 @@ if config_env() == :dev do
 
     config :edge_linkouts,
       cosmos_backend: EdgeLinkouts.Cosmos.HTTP,
-      cosmos_http: [
+      # A map, not a keyword list: EdgeLinkouts.Cosmos.HTTP reads it with map access, and a
+      # keyword list made the first request crash with BadMapError.
+      cosmos_http: %{
         endpoint: dev_endpoint,
         db: System.get_env("COSMOS_DB", "edge_linkouts"),
         container: System.get_env("COSMOS_CONTAINER", "edges"),
         key: dev_key
-      ]
+      }
   else
     config :edge_linkouts,
       cosmos_backend: EdgeLinkouts.Cosmos.File,
@@ -126,12 +128,12 @@ if config_env() == :prod do
 
   config :edge_linkouts,
     cosmos_backend: EdgeLinkouts.Cosmos.HTTP,
-    cosmos_http: [
+    cosmos_http: %{
       endpoint: cosmos_endpoint,
       db: System.get_env("COSMOS_DB", "edge_linkouts"),
       container: System.get_env("COSMOS_CONTAINER", "edges"),
       key: cosmos_key
-    ]
+    }
 
   config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],

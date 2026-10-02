@@ -284,7 +284,11 @@ func Load(ctx context.Context, o Options) (*Stats, error) {
 	if st.Edges == 0 {
 		return st, fmt.Errorf("no edges were loaded from %s", o.EdgesPath)
 	}
-	if err := writePool(gctx, &o, st); err != nil {
+	// The parent ctx, not gctx: errgroup.Wait has canceled gctx by the time we get here, so a
+	// context-honouring store (cosmos) would reject the pool write with "context canceled" after
+	// a fully successful run. The file and mem stores ignore ctx, which is why only the live
+	// account ever saw this.
+	if err := writePool(ctx, &o, st); err != nil {
 		return st, err
 	}
 	return st, nil
