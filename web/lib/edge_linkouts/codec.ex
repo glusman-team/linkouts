@@ -125,32 +125,35 @@ defmodule EdgeLinkouts.Codec do
 
   defp parse_entry(%{} = payload) do
     case Map.fetch(payload, @target) do
-      :error ->
-        # A full document: no "$" keys at all. Reject nulls because a stored null is exactly
-        # what this pipeline exists to prevent, and a null here means the writer regressed.
-        case reject_nulls(payload) do
-          :ok -> {:ok, %{kind: :full, doc: payload}}
-          {:error, path} -> {:error, {:null_at, path}}
-        end
-
-      {:ok, base} when is_binary(base) and base != "" ->
-        with {:ok, set} <- fetch_object(payload, @set, :allow_empty),
-             {:ok, add} <- fetch_add(payload),
-             {:ok, del} <- fetch_strings(payload, @del) do
-          if set == nil and add == nil and del == nil do
-            # An empty-but-present $set means "identical to base"; omitting all three is corrupt.
-            {:error, :delta_without_operations}
-          else
-            {:ok, %{kind: :delta, base: base, set: set || %{}, add: add || %{}, del: del || []}}
-          end
-        end
-
-      {:ok, other} ->
-        {:error, {:bad_target, other}}
+      :error -> parse_full(payload)
+      {:ok, base} when is_binary(base) and base != "" -> parse_delta(payload, base)
+      {:ok, other} -> {:error, {:bad_target, other}}
     end
   end
 
   defp parse_entry(other), do: {:error, {:not_an_object, other}}
+
+  # A full document carries no "$" keys at all. Nulls are rejected because a stored null is exactly
+  # what this pipeline exists to prevent, and one here means the writer regressed.
+  defp parse_full(payload) do
+    case reject_nulls(payload) do
+      :ok -> {:ok, %{kind: :full, doc: payload}}
+      {:error, path} -> {:error, {:null_at, path}}
+    end
+  end
+
+  defp parse_delta(payload, base) do
+    with {:ok, set} <- fetch_object(payload, @set, :allow_empty),
+         {:ok, add} <- fetch_add(payload),
+         {:ok, del} <- fetch_strings(payload, @del) do
+      if set == nil and add == nil and del == nil do
+        # An empty-but-present $set means "identical to base"; omitting all three is corrupt.
+        {:error, :delta_without_operations}
+      else
+        {:ok, %{kind: :delta, base: base, set: set || %{}, add: add || %{}, del: del || []}}
+      end
+    end
+  end
 
   # An absent key is nil; a present key must be an object. The distinction matters because
   # {"$t": "v", "$set": {}} is legal and means "unchanged".
@@ -386,14 +389,30 @@ defmodule EdgeLinkouts.Codec do
   @doc "Compares two `<kg>-<version>` keys, returning `:lt`, `:eq` or `:gt`."
   @spec compare_keys(version_key(), version_key()) :: :lt | :eq | :gt
   def compare_keys(a, b) do
-    {kg_a, parts_a, suffix_a} = split_key(a)
-    {kg_b, parts_b, suffix_b} = split_key(b)
+    {kg_a, _parts_a, _suffix_a} = split_key(a)
+    {kg_b, _parts_b, _suffix_b} = split_key(b)
+    if kg_a == kg_b, do: compare_versions(a, b), else: compare_terms(kg_a, kg_b)
+  end
 
-    cond do
-      kg_a != kg_b -> compare_terms(kg_a, kg_b)
-      parts_a != parts_b -> compare_parts(parts_a, parts_b)
-      true -> compare_suffix(suffix_a, suffix_b)
-    end
+  @doc """
+  Compares two version strings numerically, component by component.
+
+  Accepts either bare versions (`"1.16.0"`) or full keys (`"drug-approvals-kg-1.16.0"`), so the
+  display layer can gate on `{:version, ">1.0.0"}` using the same ordering that picks the newest
+  stored version. Two orderings that disagree would make a config's gate mean something different
+  from the version list beside it.
+
+  `1.9.0 < 1.16.0` (numeric, not lexicographic), and a final release sorts after its own
+  pre-releases, so `1.16.0-rc.1` does not become the version a page defaults to.
+  """
+  @spec compare_versions(String.t(), String.t()) :: :lt | :eq | :gt
+  def compare_versions(a, b) do
+    {_kg_a, parts_a, suffix_a} = split_key(a)
+    {_kg_b, parts_b, suffix_b} = split_key(b)
+
+    if parts_a == parts_b,
+      do: compare_suffix(suffix_a, suffix_b),
+      else: compare_parts(parts_a, parts_b)
   end
 
   @doc "Splits `<kg>-<version>` into `{kg, numeric_parts, suffix_text}`."
