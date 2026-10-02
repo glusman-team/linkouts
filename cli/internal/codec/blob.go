@@ -67,15 +67,39 @@ func (b *Blob) AddVersion(version, baseVersion string, doc, baseDoc Doc) error {
 	if err != nil {
 		return fmt.Errorf("version %s: %w", version, err)
 	}
-	// A delta whose base is not in this blob can never be resolved, so refuse it at write
-	// time instead of at read time in production.
 	if !entry.IsFull() {
+		// A delta whose base is not in this blob can never be resolved, so refuse it at write
+		// time instead of at read time in production.
 		if _, ok := b.Versions[entry.Base]; !ok {
 			return fmt.Errorf("version %s: delta targets %q, which is not stored in this blob", version, entry.Base)
 		}
+		// Storing a delta for a version that other deltas already point at would create a
+		// cycle: reloading 1.11.2 into a blob whose 1.16.0 targets it means 1.11.2 would have
+		// to target 1.16.0, which targets 1.11.2. Such a version is stored whole instead.
+		if b.dependsOn(version) {
+			entry = Entry{Full: Clone(doc).(Doc)}
+		}
 	}
 	b.Versions[version] = entry
+	// Every version must still resolve after the write. This is cheap relative to a network
+	// round trip and turns a corrupt blob into a failed load rather than a broken page view.
+	for _, v := range b.VersionKeys() {
+		if _, err := b.Resolve(v); err != nil {
+			delete(b.Versions, version)
+			return fmt.Errorf("version %s: %w", version, err)
+		}
+	}
 	return nil
+}
+
+// dependsOn reports whether any stored delta resolves against version.
+func (b *Blob) dependsOn(version string) bool {
+	for key, entry := range b.Versions {
+		if key != version && !entry.IsFull() && entry.Base == version {
+			return true
+		}
+	}
+	return false
 }
 
 // VersionKeys returns the stored versions in insertion-stable sorted order. Sorted, not
@@ -249,4 +273,28 @@ type Pool struct {
 	Key       string   `json:"key"`
 	SampledAt string   `json:"sampled_at"`
 	IDs       []string `json:"ids"`
+}
+
+// MarshalJSON encodes the envelope as a sorted map rather than relying on struct field order.
+//
+// sonic's SortMapKeys sorts map keys but emits struct fields in declaration order, so a struct
+// envelope would silently break the canonical form the Elixir reader reproduces byte for byte.
+// Routing every envelope through a Doc makes "sorted keys at every depth" true by construction
+// instead of by coincidence of field ordering.
+func (b Blob) MarshalJSON() ([]byte, error) {
+	versions := make(Doc, len(b.Versions))
+	for key, entry := range b.Versions {
+		versions[key] = entry
+	}
+	return canon.Marshal(Doc{"schema": b.Schema, "versions": versions})
+}
+
+// MarshalJSON encodes the pool envelope as a sorted map, for the same reason as Blob.
+func (p Pool) MarshalJSON() ([]byte, error) {
+	return canon.Marshal(Doc{
+		"schema":     p.Schema,
+		"key":        p.Key,
+		"sampled_at": p.SampledAt,
+		"ids":        p.IDs,
+	})
 }

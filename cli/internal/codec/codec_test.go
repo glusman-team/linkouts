@@ -444,3 +444,66 @@ func mustParseAny(t *testing.T, s string) any {
 }
 
 func encode64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
+
+// Reloading an older version must not create a cycle: the blob already holds a delta that
+// points at the version being rewritten.
+func TestAddVersionStoresFullWhenDependedOn(t *testing.T) {
+	blob, err := NewBlob("v1", Doc{"id": "x", "a": strings.Repeat("s", 100)})
+	if err != nil {
+		t.Fatalf("NewBlob: %v", err)
+	}
+	base := Doc{"id": "x", "a": strings.Repeat("s", 100)}
+	next := Doc{"id": "x", "a": strings.Repeat("s", 100), "b": "1"}
+	if err := blob.AddVersion("v2", "v1", next, base); err != nil {
+		t.Fatalf("AddVersion v2: %v", err)
+	}
+	if blob.Versions["v2"].IsFull() {
+		t.Fatal("v2 should be a delta against v1")
+	}
+
+	// Now rewrite v1, the way the pipeline does: drop the stored version, then add it back.
+	// A delta from v1 to v2 would cycle, so v1 must be stored whole.
+	rewritten := Doc{"id": "x", "a": strings.Repeat("s", 100), "c": "2"}
+	delete(blob.Versions, "v1")
+	if err := blob.AddVersion("v1", "v2", rewritten, next); err != nil {
+		t.Fatalf("AddVersion v1: %v", err)
+	}
+	if !blob.Versions["v1"].IsFull() {
+		t.Error("v1 was stored as a delta though v2 depends on it; that is a cycle")
+	}
+	for _, v := range []string{"v1", "v2"} {
+		if _, err := blob.Resolve(v); err != nil {
+			t.Errorf("Resolve(%s) after the rewrite: %v", v, err)
+		}
+	}
+	got, err := blob.Resolve("v2")
+	if err != nil {
+		t.Fatalf("Resolve v2: %v", err)
+	}
+	if got["b"] != "1" {
+		t.Errorf("v2 resolved to %#v, want the delta applied to the rewritten v1", got)
+	}
+}
+
+// A write that would leave the blob unresolvable must be rolled back, not half-applied.
+func TestAddVersionRollsBackOnFailure(t *testing.T) {
+	blob, err := NewBlob("v1", Doc{"id": "x"})
+	if err != nil {
+		t.Fatalf("NewBlob: %v", err)
+	}
+	before := len(blob.Versions)
+	err = blob.AddVersion("v2", "v1", Doc{"id": "x", "list": []any{"a"}}, Doc{"id": "x", "list": "not-a-list"})
+	if err == nil {
+		// A list that stopped being a list is a legitimate $set, so this may succeed; assert
+		// only that whatever happened left the blob resolvable.
+		for _, v := range blob.VersionKeys() {
+			if _, rerr := blob.Resolve(v); rerr != nil {
+				t.Fatalf("blob left unresolvable after a successful write: %v", rerr)
+			}
+		}
+		return
+	}
+	if len(blob.Versions) != before {
+		t.Errorf("a failed AddVersion left %d versions behind, want %d", len(blob.Versions), before)
+	}
+}

@@ -121,6 +121,8 @@ fixtures: build ## Re-extract test fixtures from the local DAKP sample (one-time
 
 contract: build ## Regenerate the committed contract fixtures and their golden copy
 	mkdir -p $(CLI)/testdata/contract
+	rm -f $(CLI)/testdata/contract/docs.ndjson $(CLI)/testdata/contract/drift.ndjson \
+	  $(CLI)/testdata/contract/unresolvable.ndjson
 	$(BIN) load drug-approvals-kg-1.11.2 --nodes $(FIXTURE_NODES) \
 	  --edges $(CLI)/testdata/dakp/edges.ndjson --engine $(FIXTURE_ENGINE) \
 	  --store $(FIXTURE_STORE) --progress=false
