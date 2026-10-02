@@ -220,9 +220,9 @@ Six edges cover every field shape in the real KG (`sources` nesting, `FDA_regula
 2. `fly launch --name edge-linkouts --region lax --no-deploy` (region `lax`: Azure West US 2 is Quincy WA and Fly retired `sea`; confirm with `fly platform regions`). `fly.toml` carries `app = "edge-linkouts"`, `primary_region = "lax"`.
 3. Cloudflare: CNAME `linkouts` → `edge-linkouts.fly.dev`, proxied, SSL Full (strict) so WebSocket upgrades work; then `fly certs add linkouts.skyelanegoetz.com`. `web/config/runtime.exs` gets `PHX_HOST`, `url: [host: "linkouts.skyelanegoetz.com", port: 443, scheme: "https"]`, `check_origin: ["//linkouts.skyelanegoetz.com"]`.
 4. `fly secrets set SECRET_KEY_BASE=… COSMOS_ENDPOINT=… COSMOS_DB=edge_linkouts COSMOS_CONTAINER=edges COSMOS_READ_ONLY_KEY=… RU_BUDGET_WEB=450` → `fly deploy` (or push to `main`).
-5. **NixOS note:** chdb-go `dlopen`s the extracted `libchdb.so`; if it can't resolve `libstdc++`/`glibc`, set `LD_LIBRARY_PATH=$(nix eval --raw nixpkgs#libstdcxx)/lib:$(nix eval --raw nixpkgs#glibc)/lib` — `.envrc.example` does this. `CHDB_CACHE_DIR` must be writable and private to your user (chdb refuses a world-writable cache dir).
+5. **NixOS note (verified, see ADR 0002):** no workaround needed. The embedded `libchdb.so` has no libstdc++ dependency — `DT_NEEDED` is only libpthread/libc/ld-linux/libm/librt/libdl, max symbol version `GLIBC_2.4`, and it loaded and ran on this NixOS host with zero setup. `CHDB_CACHE_DIR` must simply be persistent (the extraction is ~540 MiB), owned by your user, and not group/world-writable.
 
-`.envrc` (gitignored; `.envrc.example` committed with these pre-filled): `COSMOS_ENDPOINT`, `COSMOS_DB=edge_linkouts`, `COSMOS_CONTAINER=edges`, `COSMOS_KEY` (rw, CLI only), `COSMOS_READ_ONLY_KEY`, `RU_BUDGET_CLI=450`, `RU_BUDGET_WEB=450`, `CHDB_CACHE_DIR`, `LD_LIBRARY_PATH`, `FLY_APP=edge-linkouts`, `FLY_REGION=lax`, `PHX_HOST=linkouts.skyelanegoetz.com`, `SECRET_KEY_BASE`, `VAULT_KEY`.
+`.envrc` (gitignored; `.envrc.example` committed with these pre-filled): `COSMOS_ENDPOINT`, `COSMOS_DB=edge_linkouts`, `COSMOS_CONTAINER=edges`, `COSMOS_KEY` (rw, CLI only), `COSMOS_READ_ONLY_KEY`, `RU_BUDGET_CLI=450`, `RU_BUDGET_WEB=450`, `CHDB_CACHE_DIR`, `FLY_APP=edge-linkouts`, `FLY_REGION=lax`, `PHX_HOST=linkouts.skyelanegoetz.com`, `SECRET_KEY_BASE`, `VAULT_KEY`.
 
 ## Deviations (audit)
 
