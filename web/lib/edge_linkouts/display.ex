@@ -167,16 +167,22 @@ defmodule EdgeLinkouts.Display do
   @doc """
   Problems that make a config unusable. Empty means every loaded config renders.
 
-  A duplicate alias is fatal because which rename wins would depend on map order.
+  Several aliases for one field are legitimate — they form an ordered fallback chain, which is how
+  clinical trials prefers `unii` over `subject` — so only an exact repeat (same field, same
+  alternative, same version range) is reported. That is always a copy-paste mistake, and it
+  silently does nothing, which is the worst kind of config bug.
   """
   @spec check_all() :: [String.t()]
   def check_all do
     Enum.flat_map(configs(), fn config ->
-      case Enum.frequencies_by(config.aliases, & &1.field)
-           |> Enum.filter(fn {_, n} -> n > 1 end) do
-        [] -> []
-        fields -> ["#{config.file}: duplicate alias for #{inspect(fields)}"]
-      end
+      config.aliases
+      |> Enum.map(&{&1.field, &1.as, Map.get(&1, :versions)})
+      |> Enum.frequencies()
+      |> Enum.filter(fn {_rule, n} -> n > 1 end)
+      |> Enum.map(fn {{field, as, versions}, n} ->
+        scope = if versions, do: " for versions #{versions}", else: ""
+        "#{config.file}: alias #{field} -> #{as}#{scope} is listed #{n} times"
+      end)
     end)
   end
 

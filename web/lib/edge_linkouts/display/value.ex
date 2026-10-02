@@ -16,10 +16,14 @@ defmodule EdgeLinkouts.Display.Value do
       {:pick, :field, %{value => spec, default: spec}}
                                                  choose a spec by field value
       {:url, "https://…{field}", label}          a link whose URL is built from fields
+      {:number, :field, :sig2 | :int}            a number formatted to 2 sig digits / integer
+      {:humanize, :field}                        "biolink:correlated_with" -> "correlated with"
+      {:count, :field}                           the length of a list
+      {:default, :field, fallback}               fallback when the field is absent or empty
       {:if, conditions, then_spec, else_spec}    conditional inclusion
 
   Conditions: `{:present, :field}`, `{:eq, :field, value}`, `{:matches, :field, "regex"}`,
-  `{:version, ">1.0.0"}`, and `{:all | :any, [...]}`.
+  `{:lt | :gt | :lte | :gte, :field, number}`, `{:version, ">1.0.0"}`, and `{:all | :any, [...]}`.
 
   Missing values are the normal case in KGX, not an error: a field the release renamed, a node
   the join could not resolve. Every form renders to nothing when its input is absent, so a
@@ -36,6 +40,10 @@ defmodule EdgeLinkouts.Display.Value do
           | {:pick, atom() | String.t(),
              %{optional(String.t()) => spec(), optional(:default) => spec()}}
           | {:url, String.t(), spec()}
+          | {:number, atom() | String.t(), :sig2 | :int}
+          | {:humanize, atom() | String.t()}
+          | {:count, atom() | String.t()}
+          | {:default, atom() | String.t(), spec()}
           | {:if, [condition()], spec(), spec() | nil}
           | {:if, [condition()], spec()}
 
@@ -44,6 +52,8 @@ defmodule EdgeLinkouts.Display.Value do
           | {:eq, atom() | String.t(), term()}
           | {:matches, atom() | String.t(), String.t()}
           | {:version, String.t()}
+          | {:lt | :gt | :lte | :gte, atom() | String.t(), number()}
+          | {:count_gt, atom() | String.t(), non_neg_integer()}
           | {:all | :any, [condition()]}
 
   @type ctx :: %{
@@ -111,6 +121,46 @@ defmodule EdgeLinkouts.Display.Value do
     case fetch(ctx, name) do
       nil -> render(Map.get(branches, :default), ctx)
       value -> render(Map.get(branches, stringify(value), Map.get(branches, :default)), ctx)
+    end
+  end
+
+  # {:number, field, :sig2 | :int}: the legacy Perl used sprintf("%.2g", $p) and sprintf("%.0f", $n).
+  # :sig2 renders two significant digits in scientific notation — a deliberate change from Perl's
+  # %g, because "1.2e-9" is unambiguous at a glance where "0.0000000012" invites miscounting zeros.
+  def render({:number, name, format}, ctx) do
+    case fetch(ctx, name) do
+      nil -> []
+      value -> [Segment.text(format_number(value, format))]
+    end
+  end
+
+  # {:humanize, field}: KGX predicates arrive as "biolink:correlated_with". The Perl stripped the
+  # prefix and swapped underscores for spaces to get prose; same here.
+  def render({:humanize, name}, ctx) do
+    case fetch(ctx, name) do
+      nil -> []
+      value -> [Segment.text(humanize(stringify(value)))]
+    end
+  end
+
+  # {:count, field}: the length of a list, for "3 clinical trials" phrasing.
+  def render({:count, name}, ctx) do
+    case fetch(ctx, name) do
+      nil -> []
+      value when is_list(value) -> [Segment.text(Integer.to_string(length(value)))]
+      _value -> [Segment.text("1")]
+    end
+  end
+
+  # {:default, field, fallback}: the Perl `//` and `||` idiom. A field the release dropped falls
+  # back rather than blanking the sentence; the fallback is itself a spec, so it can be a literal,
+  # another field, or a link.
+  def render({:default, name, fallback}, ctx) do
+    case fetch(ctx, name) do
+      nil -> render(fallback, ctx)
+      "" -> render(fallback, ctx)
+      [] -> render(fallback, ctx)
+      _value -> render({:field, name}, ctx)
     end
   end
 
@@ -198,6 +248,37 @@ defmodule EdgeLinkouts.Display.Value do
     end
   end
 
+  # Numeric comparisons, for "positively/negatively associated" driven by a coefficient's sign.
+  # A missing or non-numeric value is false rather than an error: half the releases in the wild
+  # omit these fields, and a blank sentence beats a crash.
+  for {tag, op} <- [lt: :<, gt: :>, lte: :<=, gte: :>=] do
+    def condition?({unquote(tag), name, bound}, ctx) when is_number(bound) do
+      case fetch(ctx, name) do
+        value when is_number(value) -> Kernel.unquote(op)(value, bound)
+        _ -> false
+      end
+    end
+
+    def condition?({unquote(tag), _name, bound}, _ctx) do
+      raise ArgumentError,
+            "{:#{unquote(tag)}, field, bound} needs a numeric bound, got #{inspect(bound)}"
+    end
+  end
+
+  # Length of a list field, for pluralization. Counting is not expressible with the numeric
+  # comparisons, which read a number out of the document rather than measuring a list.
+  def condition?({:count_gt, name, bound}, ctx) when is_integer(bound) do
+    case fetch(ctx, name) do
+      value when is_list(value) -> length(value) > bound
+      nil -> false
+      _ -> 1 > bound
+    end
+  end
+
+  def condition?({:count_gt, _, bound}, _ctx) do
+    raise ArgumentError, "{:count_gt, field, integer} expected, got bound #{inspect(bound)}"
+  end
+
   def condition?({:all, conditions}, ctx), do: all?(conditions, ctx)
   def condition?({:any, conditions}, ctx), do: Enum.any?(conditions, &condition?(&1, ctx))
 
@@ -247,6 +328,56 @@ defmodule EdgeLinkouts.Display.Value do
       {:ok, spec} -> render(spec, ctx)
       :error -> render({:field, name}, ctx)
     end
+  end
+
+  defp format_number(value, :int) when is_integer(value), do: Integer.to_string(value)
+  defp format_number(value, :int) when is_float(value), do: Integer.to_string(round(value))
+  defp format_number(value, :int), do: stringify(value) || ""
+
+  # Two significant digits. Small and large magnitudes use scientific notation with an unpadded
+  # exponent ("1.2e-9", not Erlang's "1.2e-09"), which is the form a reader expects for p-values;
+  # ordinary magnitudes print plainly so a coefficient of 0.42 does not become "4.2e-1".
+  defp format_number(value, :sig2) when is_float(value) do
+    magnitude = abs(value)
+
+    if magnitude != 0.0 and (magnitude < 1.0e-3 or magnitude >= 1.0e4) do
+      # Erlang writes "1.2e-09"; strip the exponent's padding and any explicit "+".
+      Regex.replace(~r/e([+-])0*(\d+)$/, :erlang.float_to_binary(value, scientific: 1), fn
+        _, "+", digits -> "e" <> digits
+        _, "-", digits -> "e-" <> digits
+      end)
+    else
+      value |> Float.round(significant_decimals(magnitude)) |> trim_trailing_zero()
+    end
+  end
+
+  defp format_number(value, :sig2) when is_integer(value), do: Integer.to_string(value)
+  # A source that spells a missing number "NA" must not become "0" or crash the render.
+  defp format_number(value, :sig2), do: stringify(value) || ""
+
+  defp format_number(_value, other) do
+    raise ArgumentError,
+          "unsupported {:number, field, #{inspect(other)}} format; expected :sig2 or :int"
+  end
+
+  # Decimals needed for two significant digits at this magnitude: 0.123 -> 2, 0.0123 -> 3, 12.3 -> 0.
+  defp significant_decimals(magnitude) when magnitude == 0.0, do: 0
+
+  defp significant_decimals(magnitude) do
+    max(0, 1 - floor(:math.log10(magnitude)))
+  end
+
+  defp trim_trailing_zero(rounded) do
+    case Float.ratio(rounded) do
+      {_, 1} -> rounded |> trunc() |> Integer.to_string()
+      _ -> :erlang.float_to_binary(rounded, [:short])
+    end
+  end
+
+  defp humanize(value) do
+    value
+    |> String.replace(~r/^biolink:/i, "")
+    |> String.replace("_", " ")
   end
 
   defp interleave([single], _sep), do: [single]

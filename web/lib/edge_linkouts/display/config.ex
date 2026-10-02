@@ -219,6 +219,25 @@ defmodule EdgeLinkouts.Display.Config do
   def spec_problems({:pick, _, _} = other, where),
     do: ["#{where}: {:pick, name, branches_map} expected, got #{inspect(other)}"]
 
+  def spec_problems({:number, name, format}, _where)
+      when (is_binary(name) or is_atom(name)) and format in [:sig2, :int], do: []
+
+  def spec_problems({:number, _, _} = other, where),
+    do: ["#{where}: {:number, field, :sig2 | :int} expected, got #{inspect(other)}"]
+
+  def spec_problems({tag, name}, _where)
+      when tag in [:humanize, :count] and (is_binary(name) or is_atom(name)), do: []
+
+  def spec_problems({tag, _} = other, where) when tag in [:humanize, :count],
+    do: ["#{where}: {#{inspect(tag)}, field} expected, got #{inspect(other)}"]
+
+  def spec_problems({:default, name, fallback}, where) when is_binary(name) or is_atom(name) do
+    spec_problems(fallback, "#{where}.fallback")
+  end
+
+  def spec_problems({:default, _, _} = other, where),
+    do: ["#{where}: {:default, field, fallback} expected, got #{inspect(other)}"]
+
   def spec_problems({:url, template, label}, where) when is_binary(template) do
     spec_problems(label, "#{where}.label")
   end
@@ -276,6 +295,23 @@ defmodule EdgeLinkouts.Display.Config do
 
   defp condition_problem({:version, other}, where),
     do: ["#{where}: {:version, \"<op><version>\"} expected, got #{inspect(other)}"]
+
+  # Numeric comparisons, for direction words driven by a coefficient's sign.
+  defp condition_problem({tag, name, bound}, _where)
+       when tag in [:lt, :gt, :lte, :gte] and (is_binary(name) or is_atom(name)) and
+              is_number(bound),
+       do: []
+
+  defp condition_problem({tag, _, _} = other, where) when tag in [:lt, :gt, :lte, :gte],
+    do: ["#{where}: {#{inspect(tag)}, field, number} expected, got #{inspect(other)}"]
+
+  # Length of a list field, used for pluralization ("a clinical trial" vs "3 clinical trials").
+  defp condition_problem({:count_gt, name, bound}, _where)
+       when (is_binary(name) or is_atom(name)) and is_integer(bound),
+       do: []
+
+  defp condition_problem({:count_gt, _, _} = other, where),
+    do: ["#{where}: {:count_gt, field, integer} expected, got #{inspect(other)}"]
 
   defp condition_problem({op, conditions}, where)
        when op in [:all, :any] and is_list(conditions) do
@@ -414,6 +450,9 @@ defmodule EdgeLinkouts.Display.Config do
   defp collect_spec_slots({:if, _conditions, then_spec, else_spec}) do
     collect_spec_slots(then_spec) ++ collect_spec_slots(else_spec)
   end
+
+  defp collect_spec_slots({:default, _name, fallback}), do: collect_spec_slots(fallback)
+  defp collect_spec_slots({:url, _template, label}), do: collect_spec_slots(label)
 
   defp collect_spec_slots({:if, _conditions, then_spec}) do
     collect_spec_slots(then_spec)
