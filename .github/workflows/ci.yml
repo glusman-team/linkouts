@@ -74,6 +74,9 @@ jobs:
           elixir-version: "1.19"
       - run: cd docs && mix deps.get && cd ../web && mix deps.get
       - run: make docs-check
+      # Here rather than in its own job: it needs both Go (to regenerate the fixtures) and Elixir
+      # (to read them), and this job already sets up both.
+      - run: make contract-check
 
   pre-commit:
     runs-on: ubuntu-latest

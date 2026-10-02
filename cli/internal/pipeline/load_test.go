@@ -417,7 +417,7 @@ func TestReservoirIsUniformAndCapped(t *testing.T) {
 	const k, n = 100, 10000
 	counts := make(map[string]int, n)
 	for range 20 {
-		r := newReservoir(k)
+		r := newReservoir(k, 0)
 		for i := range n {
 			r.offer(idFor(i))
 		}
@@ -594,4 +594,23 @@ func (b *safeBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
+}
+
+// Regenerating the committed contract fixtures must give identical bytes, or CI's diff of them is
+// noise. A fixed seed and clock are the only things the pool needs for that.
+func TestReservoirIsReproducibleWithASeed(t *testing.T) {
+	sample := func(seed int64) []string {
+		r := newReservoir(10, seed)
+		for i := range 1000 {
+			r.offer(idFor(i))
+		}
+		return r.snapshot()
+	}
+	a, b := sample(42), sample(42)
+	if fmt.Sprint(a) != fmt.Sprint(b) {
+		t.Fatalf("same seed, different samples:\n%v\n%v", a, b)
+	}
+	if fmt.Sprint(a) == fmt.Sprint(sample(43)) {
+		t.Fatal("different seeds gave the same sample; the seed is not reaching the RNG")
+	}
 }

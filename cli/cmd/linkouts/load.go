@@ -23,6 +23,8 @@ type loadFlags struct {
 	noRepack   bool
 	dryRun     bool
 	sampleSize int
+	sampleSeed int64
+	sampledAt  string
 	threads    int
 	progress   bool
 }
@@ -63,6 +65,12 @@ smaller, and the document is replaced under an etag precondition.`,
 	cmd.Flags().IntVar(&f.sampleSize, "sample-size", pipeline.DefaultSampleSize, "ids to reservoir-sample for /random (0 disables)")
 	cmd.Flags().IntVar(&f.threads, "threads", 0, "ClickHouse max_threads (default: NumCPU)")
 	cmd.Flags().BoolVar(&f.progress, "progress", true, "print progress lines to stderr")
+	// Hidden: only `make contract` uses these, so the committed fixtures regenerate to the same
+	// bytes. They are not part of the user-facing CLI and are left out of its generated reference.
+	cmd.Flags().Int64Var(&f.sampleSeed, "sample-seed", 0, "fix the /random reservoir seed (fixtures only)")
+	cmd.Flags().StringVar(&f.sampledAt, "sampled-at", "", "fix the pool timestamp, RFC 3339 (fixtures only)")
+	_ = cmd.Flags().MarkHidden("sample-seed")
+	_ = cmd.Flags().MarkHidden("sampled-at")
 	_ = cmd.MarkFlagRequired("nodes")
 	_ = cmd.MarkFlagRequired("edges")
 	return cmd
@@ -93,7 +101,16 @@ func runLoad(ctx context.Context, g *globals, key string, f *loadFlags) (err err
 	}
 	defer deferClose(eng.Close, &err)
 
+	var now func() time.Time
+	if f.sampledAt != "" {
+		at, err := time.Parse(time.RFC3339, f.sampledAt)
+		if err != nil {
+			return fmt.Errorf("--sampled-at: %w", err)
+		}
+		now = func() time.Time { return at }
+	}
 	opt := pipeline.Options{
+		Now:         now,
 		Key:         key,
 		BaseKey:     f.base,
 		NodesPath:   f.nodes,
@@ -107,6 +124,7 @@ func runLoad(ctx context.Context, g *globals, key string, f *loadFlags) (err err
 		NoRepack:    f.noRepack,
 		Concurrency: g.concurrency,
 		SampleSize:  f.sampleSize,
+		SampleSeed:  f.sampleSeed,
 		Threads:     f.threads,
 	}
 	if f.progress {

@@ -62,7 +62,13 @@ type Options struct {
 	Concurrency int
 	// SampleSize is the /random reservoir cap. Zero disables sampling.
 	SampleSize int
-	Progress   Progress
+	// SampleSeed fixes the reservoir's RNG. Zero (the default) means random. It is set only to
+	// regenerate the committed contract fixtures reproducibly.
+	SampleSeed int64
+	// Now stamps the pool's sampled_at. Nil means time.Now. Fixed for the same reason as
+	// SampleSeed.
+	Now      func() time.Time
+	Progress Progress
 
 	// Threads caps ClickHouse parallelism for the join.
 	Threads int
@@ -224,7 +230,7 @@ func Load(ctx context.Context, o Options) (*Stats, error) {
 	}
 	st := &Stats{Key: o.Key, Start: time.Now()}
 	if o.SampleSize > 0 && !o.DryRun {
-		st.sampler = newReservoir(o.SampleSize)
+		st.sampler = newReservoir(o.SampleSize, o.SampleSeed)
 	}
 
 	rows := make(chan engine.Row, queueDepth)
@@ -428,6 +434,13 @@ func dictionaryFor(storedID uint32, current []byte) ([]byte, error) {
 		"pass the matching --dict or repack with --no-repack=false", storedID, currentID)
 }
 
+func (o *Options) now() time.Time {
+	if o.Now != nil {
+		return o.Now()
+	}
+	return time.Now()
+}
+
 // writePool stores the reservoir of edge ids that backs /random, merging with whatever an
 // earlier run left so the pool spans every KG rather than only the newest one.
 func writePool(ctx context.Context, o *Options, st *Stats) error {
@@ -444,7 +457,7 @@ func writePool(ctx context.Context, o *Options, st *Stats) error {
 		if derr == nil {
 			var old codec.Pool
 			if derr := codec.DecodeJSON(existing.Blob, dict, &old); derr == nil && old.Schema == codec.PoolSchema {
-				merged := newReservoir(len(ids))
+				merged := newReservoir(len(ids), o.SampleSeed)
 				for _, id := range append(old.IDs, ids...) {
 					merged.offer(id)
 				}
@@ -455,7 +468,7 @@ func writePool(ctx context.Context, o *Options, st *Stats) error {
 	pool := codec.Pool{
 		Schema:    codec.PoolSchema,
 		Key:       o.Key,
-		SampledAt: time.Now().UTC().Format(time.RFC3339),
+		SampledAt: o.now().UTC().Format(time.RFC3339),
 		IDs:       ids,
 	}
 	encoded, err := codec.EncodeJSON(pool, o.Dict, o.ZstdLevel)

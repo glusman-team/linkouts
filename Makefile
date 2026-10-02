@@ -115,6 +115,9 @@ docs-check: cli-docs ## Fail if generated CLI docs are stale, then build the sit
 # Two versions of the same six edges, so the delta path is exercised, not just the full path.
 FIXTURE_ENGINE := fake
 FIXTURE_STORE  := file:$(CLI)/testdata/contract/docs.ndjson
+# A fixed reservoir seed and pool timestamp, so regenerating the fixtures gives identical bytes and
+# a diff against the committed copy means something changed, not that the clock moved.
+FIXTURE_REPRO  := --sample-seed 1 --sampled-at 2026-01-01T00:00:00Z
 FIXTURE_NODES  := $(CLI)/testdata/dakp/nodes.ndjson
 
 .PHONY: fixtures contract
@@ -129,16 +132,16 @@ contract: build ## Regenerate the committed contract fixtures and their golden c
 	  $(CLI)/testdata/contract/unresolvable.ndjson
 	$(BIN) load drug-approvals-kg-1.11.2 --nodes $(FIXTURE_NODES) \
 	  --edges $(CLI)/testdata/dakp/edges.ndjson --engine $(FIXTURE_ENGINE) \
-	  --store $(FIXTURE_STORE) --progress=false
+	  --store $(FIXTURE_STORE) --progress=false $(FIXTURE_REPRO)
 	$(BIN) load drug-approvals-kg-1.16.0 --nodes $(FIXTURE_NODES) \
 	  --edges $(CLI)/testdata/dakp/edges.v2.ndjson --engine $(FIXTURE_ENGINE) \
-	  --store $(FIXTURE_STORE) --progress=false
+	  --store $(FIXTURE_STORE) --progress=false $(FIXTURE_REPRO)
 	$(BIN) load drug-approvals-kg-1.16.0 --nodes $(FIXTURE_NODES) \
 	  --edges $(CLI)/testdata/dakp/edges.drift.ndjson --engine $(FIXTURE_ENGINE) \
-	  --store file:$(CLI)/testdata/contract/drift.ndjson --progress=false
+	  --store file:$(CLI)/testdata/contract/drift.ndjson --progress=false $(FIXTURE_REPRO)
 	$(BIN) load drug-approvals-kg-1.16.0 --nodes $(FIXTURE_NODES) \
 	  --edges $(CLI)/testdata/dakp/edges.unresolvable.ndjson --engine $(FIXTURE_ENGINE) \
-	  --store file:$(CLI)/testdata/contract/unresolvable.ndjson --progress=false
+	  --store file:$(CLI)/testdata/contract/unresolvable.ndjson --progress=false $(FIXTURE_REPRO)
 	cp $(CLI)/testdata/contract/docs.ndjson $(CLI)/testdata/contract/docs.golden.ndjson
 	@echo "contract fixtures: $$(wc -l < $(CLI)/testdata/contract/docs.ndjson) documents"
 
@@ -146,6 +149,13 @@ contract-test: contract ## Contract fixtures plus the Elixir reader that must ag
 	mkdir -p $(WEB)/test/fixtures/contract
 	cp $(CLI)/testdata/contract/*.ndjson $(WEB)/test/fixtures/contract/
 	cd $(WEB) && mix test test/contract_test.exs
+
+# Regeneration is byte-reproducible (fixed reservoir seed and pool clock, sorted pool), so any diff
+# here means the Go writer's output changed and the committed fixtures, which the Elixir tests
+# read, no longer match it.
+.PHONY: contract-check
+contract-check: contract-test ## Fail if the committed contract fixtures are stale
+	git diff --exit-code -- $(CLI)/testdata/contract $(WEB)/test/fixtures/contract
 
 # ---------------------------------------------------------------- gates
 

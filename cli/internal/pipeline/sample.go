@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"math/rand"
+	"sort"
 	"sync"
 )
 
@@ -22,15 +23,21 @@ type reservoir struct {
 	rng  *rand.Rand
 }
 
-func newReservoir(k int) *reservoir {
+// newReservoir returns an empty sample of at most k ids. A zero seed draws a random one, which is
+// what production wants. A fixed seed makes the sample reproducible, so regenerating the committed
+// contract fixtures gives the same bytes and CI can diff them.
+func newReservoir(k int, seed int64) *reservoir {
 	if k < 1 {
 		k = 1
+	}
+	if seed == 0 {
+		seed = rand.Int63()
 	}
 	return &reservoir{
 		k:    k,
 		ids:  make([]string, 0, k),
 		seen: make(map[string]struct{}, k),
-		rng:  rand.New(rand.NewSource(rand.Int63())),
+		rng:  rand.New(rand.NewSource(seed)),
 	}
 }
 
@@ -63,11 +70,19 @@ func (r *reservoir) offer(id string) {
 }
 
 // snapshot returns a copy of the sample in arbitrary order.
+// snapshot returns the sample sorted. Ids are offered from concurrent workers, so the order they
+// reach the reservoir varies run to run. Sorting removes that, which is what makes a seeded run
+// reproducible whenever the sample holds every id offered (the contract fixtures hold 6 edges and
+// the cap is 4096). /random picks uniformly from the list, so order carries no meaning.
+//
+// When there are more ids than the cap, which ids survive still depends on offer order. A seed
+// cannot fix that without serializing the load, and nothing needs it to.
 func (r *reservoir) snapshot() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := make([]string, len(r.ids))
 	copy(out, r.ids)
+	sort.Strings(out)
 	return out
 }
 
