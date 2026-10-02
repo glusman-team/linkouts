@@ -7,20 +7,33 @@ defmodule EdgeLinkouts.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
-      {Phoenix.PubSub, name: EdgeLinkouts.PubSub},
-      # One connection pool for Cosmos point reads (see EdgeLinkouts.Cosmos.Finch).
-      {Finch, name: EdgeLinkouts.Cosmos.Finch, pools: %{:default => [size: 16, count: 1]}},
-      # Start a worker by calling: EdgeLinkouts.Worker.start_link(arg)
-      # {EdgeLinkouts.Worker, arg},
-      # Start to serve requests, typically the last entry
-      EdgeLinkoutsWeb.Endpoint
-    ]
+    children =
+      [
+        {Phoenix.PubSub, name: EdgeLinkouts.PubSub},
+        # One connection pool for Cosmos point reads (see EdgeLinkouts.Cosmos.Finch).
+        {Finch, name: EdgeLinkouts.Cosmos.Finch, pools: %{:default => [size: 16, count: 1]}},
+        # Read path support: file backend (dev), RU budget, in-flight read coalescing.
+        EdgeLinkouts.Cosmos.File,
+        EdgeLinkouts.RateLimiter,
+        EdgeLinkouts.Dedupe,
+        # Start to serve requests, typically the last entry
+        EdgeLinkoutsWeb.Endpoint
+      ] ++ test_children()
 
     # See https://elixir.hexdocs.pm/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: EdgeLinkouts.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  # The in-memory Cosmos fake is programmable per test, so it runs only in the test env
+  # (config :edge_linkouts, :start_cosmos_fake in config/test.exs).
+  defp test_children do
+    if Application.get_env(:edge_linkouts, :start_cosmos_fake, false) do
+      [EdgeLinkouts.Cosmos.Fake]
+    else
+      []
+    end
   end
 
   # Tell Phoenix to update the endpoint configuration

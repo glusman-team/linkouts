@@ -23,6 +23,14 @@ end
 config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# Web app's slice of the free tier's 1000 RU/s (the CLI budgets the other half).
+config :edge_linkouts,
+  ru_budget_web: String.to_integer(System.get_env("RU_BUDGET_WEB", "450"))
+
+# Connection-string fallbacks below go through
+# EdgeLinkouts.Cosmos.HTTP.connection_string_key/2: each `;`-separated pair is split on
+# the first "=" only, because base64 account keys end in "=" padding.
+
 if config_env() == :dev do
   # Reload browser tabs when matching files change.
   config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,
@@ -36,6 +44,42 @@ if config_env() == :dev do
         ~r"lib/edge_linkouts_web/(controllers|live|components)/.*\.(ex|heex)$"E
       ]
     ]
+
+  # Cosmos in dev: the real read-only client when credentials are configured (or
+  # COSMOS_BACKEND=http forces it), otherwise the NDJSON file backend against the CLI's
+  # file store (COSMOS_DOCS=/tmp/edges.ndjson), which starts empty when unset.
+  dev_key =
+    System.get_env("COSMOS_READ_ONLY_KEY") ||
+      EdgeLinkouts.Cosmos.HTTP.connection_string_key(
+        System.get_env("COSMOS_PRIMARY_CONNECTION_STRING_R"),
+        "AccountKey"
+      )
+
+  dev_endpoint =
+    System.get_env("COSMOS_ENDPOINT") ||
+      EdgeLinkouts.Cosmos.HTTP.connection_string_key(
+        System.get_env("COSMOS_PRIMARY_CONNECTION_STRING_R"),
+        "AccountEndpoint"
+      )
+
+  if System.get_env("COSMOS_BACKEND") == "http" or (dev_endpoint && dev_key) do
+    unless dev_endpoint && dev_key do
+      raise "COSMOS_BACKEND=http needs COSMOS_ENDPOINT and COSMOS_READ_ONLY_KEY (or COSMOS_PRIMARY_CONNECTION_STRING_R)"
+    end
+
+    config :edge_linkouts,
+      cosmos_backend: EdgeLinkouts.Cosmos.HTTP,
+      cosmos_http: [
+        endpoint: dev_endpoint,
+        db: System.get_env("COSMOS_DB", "edge_linkouts"),
+        container: System.get_env("COSMOS_CONTAINER", "edges"),
+        key: dev_key
+      ]
+  else
+    config :edge_linkouts,
+      cosmos_backend: EdgeLinkouts.Cosmos.File,
+      cosmos_file: System.get_env("COSMOS_DOCS")
+  end
 end
 
 if config_env() == :prod do
@@ -52,6 +96,42 @@ if config_env() == :prod do
       """
 
   host = System.get_env("PHX_HOST") || "example.com"
+
+  # Cosmos read-only access (see docs/adr/0002-verified-api-surface.md). The web app is
+  # read-only and sees the read-only key only; the read-write key never reaches it.
+  cosmos_endpoint =
+    System.get_env("COSMOS_ENDPOINT") ||
+      EdgeLinkouts.Cosmos.HTTP.connection_string_key(
+        System.get_env("COSMOS_PRIMARY_CONNECTION_STRING_R"),
+        "AccountEndpoint"
+      ) ||
+      raise """
+      environment variable COSMOS_ENDPOINT is missing.
+      Set it to the Cosmos account endpoint, e.g. https://<account>.documents.azure.com:443/
+      (or export COSMOS_PRIMARY_CONNECTION_STRING_R; the endpoint and key are read from it).
+      """
+
+  cosmos_key =
+    System.get_env("COSMOS_READ_ONLY_KEY") ||
+      EdgeLinkouts.Cosmos.HTTP.connection_string_key(
+        System.get_env("COSMOS_PRIMARY_CONNECTION_STRING_R"),
+        "AccountKey"
+      ) ||
+      raise """
+      environment variable COSMOS_READ_ONLY_KEY is missing.
+      Azure Portal -> your Cosmos account -> Settings -> Keys -> "Primary or secondary
+      read-only keys". Never set the read-write key here: the web app cannot write and
+      must not be able to.
+      """
+
+  config :edge_linkouts,
+    cosmos_backend: EdgeLinkouts.Cosmos.HTTP,
+    cosmos_http: [
+      endpoint: cosmos_endpoint,
+      db: System.get_env("COSMOS_DB", "edge_linkouts"),
+      container: System.get_env("COSMOS_CONTAINER", "edges"),
+      key: cosmos_key
+    ]
 
   config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],

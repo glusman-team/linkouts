@@ -10,6 +10,19 @@ import Config
 config :edge_linkouts,
   generators: [timestamp_type: :utc_datetime]
 
+# Cosmos read path. Backends and endpoints are re-selected at runtime in config/runtime.exs
+# (prod requires the read-only key; dev falls back to the file backend when no credentials
+# are configured; tests use EdgeLinkouts.Cosmos.Fake).
+config :edge_linkouts,
+  cosmos_backend: EdgeLinkouts.Cosmos.HTTP,
+  # Web app's slice of the free tier's 1000 RU/s (CLI takes the other half).
+  ru_budget_web: 450,
+  # Point-read cost estimate used by RateLimiter.allow?/2 before the call. The actual
+  # x-ms-request-charge is reconciled afterwards on every response.
+  cosmos_estimated_read_ru: 10,
+  # Bound on how long Dedupe waiters wait for a leader before reading directly.
+  dedupe_wait_ms: 500
+
 # Configure the endpoint
 config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,
   url: [host: "localhost"],

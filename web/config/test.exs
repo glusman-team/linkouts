@@ -21,3 +21,11 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# Tests never touch the network: the Fake is the configured backend and the supervision
+# tree starts it (programmable documents, failures, latency, call log). The File backend
+# instance is pointed at the committed contract fixtures so tests can exercise it too.
+config :edge_linkouts,
+  cosmos_backend: EdgeLinkouts.Cosmos.Fake,
+  start_cosmos_fake: true,
+  cosmos_file: Path.expand("../test/fixtures/contract/docs.ndjson", __DIR__)
