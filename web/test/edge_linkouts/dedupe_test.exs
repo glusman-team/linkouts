@@ -9,9 +9,12 @@ defmodule EdgeLinkouts.DedupeTest do
     %{fake: fake}
   end
 
+  # Coalescing tests run with the result cache off, so a cached result cannot hide a backend call.
+  # The cache has its own describe block below.
   defp start_dedupe(opts \\ []) do
-    name = :"dedupe_#{System.unique_integer()}"
-    start_supervised!({Dedupe, Keyword.put(opts, :name, name)})
+    name = :"dedupe_#{System.unique_integer([:positive])}"
+    opts = opts |> Keyword.put(:name, name) |> Keyword.put_new(:ttl_ms, 0)
+    start_supervised!({Dedupe, opts})
     name
   end
 
@@ -132,5 +135,71 @@ defmodule EdgeLinkouts.DedupeTest do
     assert {:ok, _} = Dedupe.execute(id, fun, dedupe)
 
     assert Cosmos.Fake.calls(fake) |> length() == 2
+  end
+
+  describe "recent results" do
+    setup %{fake: fake} do
+      Cosmos.Fake.seed(%{"id" => "e1", "b" => "x"}, fake)
+      :ok
+    end
+
+    defp read(dedupe, fake, id),
+      do: Dedupe.execute(id, fn -> Cosmos.Fake.get_edge(id, fake) end, dedupe)
+
+    test "the LiveView double mount costs one backend read, not two", %{fake: fake} do
+      # Static render, then the connected mount a moment later: sequential, so coalescing alone
+      # cannot merge them.
+      dedupe = start_dedupe(ttl_ms: 30_000)
+
+      assert {:ok, _} = read(dedupe, fake, "e1")
+      assert {:ok, _} = read(dedupe, fake, "e1")
+
+      assert Cosmos.Fake.calls(fake) == [{:get_edge, "e1"}]
+    end
+
+    test "a failure is not remembered, so the next view retries", %{fake: fake} do
+      dedupe = start_dedupe(ttl_ms: 30_000)
+
+      assert {:error, :not_found} = read(dedupe, fake, "missing")
+      assert {:error, :not_found} = read(dedupe, fake, "missing")
+      assert length(Cosmos.Fake.calls(fake)) == 2
+
+      Cosmos.Fake.queue_error({:throttled, 100}, fake)
+      assert {:error, {:throttled, 100}} = read(dedupe, fake, "e1")
+      assert {:ok, _} = read(dedupe, fake, "e1")
+    end
+
+    test "results expire after the ttl", %{fake: fake} do
+      dedupe = start_dedupe(ttl_ms: 20)
+
+      assert {:ok, _} = read(dedupe, fake, "e1")
+      Process.sleep(40)
+      assert {:ok, _} = read(dedupe, fake, "e1")
+
+      assert length(Cosmos.Fake.calls(fake)) == 2
+    end
+
+    test "a full table stops remembering instead of evicting", %{fake: fake} do
+      Cosmos.Fake.seed(%{"id" => "e2", "b" => "y"}, fake)
+      dedupe = start_dedupe(ttl_ms: 30_000, max_entries: 1)
+
+      assert {:ok, _} = read(dedupe, fake, "e1")
+      assert {:ok, _} = read(dedupe, fake, "e2")
+      # e1 kept its slot; e2 found the table full and was not stored.
+      assert {:ok, _} = read(dedupe, fake, "e1")
+      assert {:ok, _} = read(dedupe, fake, "e2")
+
+      assert Cosmos.Fake.calls(fake) == [{:get_edge, "e1"}, {:get_edge, "e2"}, {:get_edge, "e2"}]
+    end
+
+    test "clear/1 forgets everything", %{fake: fake} do
+      dedupe = start_dedupe(ttl_ms: 30_000)
+
+      assert {:ok, _} = read(dedupe, fake, "e1")
+      :ok = Dedupe.clear(dedupe)
+      assert {:ok, _} = read(dedupe, fake, "e1")
+
+      assert length(Cosmos.Fake.calls(fake)) == 2
+    end
   end
 end

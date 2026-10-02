@@ -66,14 +66,15 @@ defmodule EdgeLinkouts.MixProject do
        compile: false,
        depth: 1},
       {:bandit, "~> 1.5"},
-      # Deliberately absent: jason (built-in JSON), lazy_html (a Rust NIF; Floki's default
-      # parser is Mochiweb, pure Erlang), telemetry_metrics/poller (no dashboard),
+      # Deliberately absent: jason (built-in JSON), telemetry_metrics/poller (no dashboard),
       # dns_cluster (no clustering), swoosh/req/gettext/ecto (see PLAN.md).
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:floki, "~> 0.38", only: :test},
-      # Phoenix.LiveViewTest (live/2, element/2) parses rendered HTML and hard-requires
-      # lazy_html: deps/phoenix_live_view/lib/phoenix_live_view/test/dom.ex raises
-      # "Phoenix LiveView requires lazy_html as a test dependency" without it.
+      # Test-only exception to "no NIFs": lazy_html wraps the Lexbor C library. LiveView 1.2's
+      # Phoenix.LiveViewTest hard-requires it (test/dom.ex raises without it), and there is no
+      # pure-Erlang alternative. It is never compiled into the release. Without it the
+      # "?version= does not re-read" guarantee could not be tested, because that needs a live
+      # LiveView process.
       {:lazy_html, ">= 0.1.0", only: :test},
       {:stream_data, "~> 1.2", only: :test}
     ]

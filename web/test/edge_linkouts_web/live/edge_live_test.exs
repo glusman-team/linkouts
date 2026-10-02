@@ -4,7 +4,7 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
   import Phoenix.LiveViewTest
 
   alias EdgeLinkouts.Codec
-  alias EdgeLinkouts.Cosmos
+  alias EdgeLinkouts.{Cosmos, Dedupe}
   alias EdgeLinkoutsWeb.Fixtures
 
   @v1 Fixtures.v1()
@@ -43,16 +43,33 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
       end
     end
 
+    test "a full page view, static render plus connected mount, costs one backend read", %{
+      conn: conn,
+      id: id
+    } do
+      # The test env runs the shared Dedupe with its result cache off, so tests cannot leak
+      # documents into each other. Turn it on here to check what production does. Without the
+      # cache this was two reads per page view, because the two mounts are sequential and
+      # coalescing alone cannot merge them.
+      Dedupe.clear()
+      :sys.replace_state(Dedupe, &%{&1 | ttl_ms: 30_000})
+      on_exit(fn -> :sys.replace_state(Dedupe, &%{&1 | ttl_ms: 0}) end)
+
+      {:ok, _view, _html} = live(conn, "/edges/#{id}")
+
+      assert Cosmos.Fake.calls() == [{:get_edge, id}]
+    end
+
     test "switching ?version selects that version without a second backend read", %{
       conn: conn,
       id: id
     } do
       {:ok, view, html} = live(conn, "/edges/#{id}")
 
-      # live/2 mounts the LiveView twice by design (once for the static HTTP render,
-      # once for the connected process), so the absolute count is 2. The invariant under
-      # test is that switching the version adds nothing to it: the blob already in the
-      # assigns holds every stored version.
+      # live/2 mounts twice (static render, then connected). With the result cache off, as it
+      # is in tests, that is two reads; the test above covers the production count. The
+      # invariant here is that switching the version adds nothing, because the blob in the
+      # assigns already holds every stored version.
       calls_after_load = Cosmos.Fake.calls()
       assert calls_after_load != []
       assert Enum.all?(calls_after_load, &match?({:get_edge, ^id}, &1))
@@ -83,23 +100,43 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
       assert raised.message =~ "no edge with id"
     end
 
-    test "a throttled read renders the retry copy, not an error term", %{conn: conn, id: id} do
-      start_supervised!({EdgeLinkouts.RateLimiter, name: :edge_live_throttle_limiter, budget: 1})
-      Application.put_env(:edge_linkouts, :rate_limiter, :edge_live_throttle_limiter)
-      on_exit(fn -> Application.delete_env(:edge_linkouts, :rate_limiter) end)
+    # Both ways the transport refuses for capacity: the local RU budget (checked before the call)
+    # and Cosmos's own 429 after the single retry. Each must read as "retry", not as a store outage,
+    # which is what the page said before Edges.read/2 mapped them.
+    for {label, reason} <- [
+          {"the local RU budget", :budget_exhausted},
+          {"Cosmos 429 after the retry", {:throttled, 250}}
+        ] do
+      test "#{label} renders the retry copy, not an error term", %{conn: conn, id: id} do
+        # live/2 mounts twice (static render, then the connected process), so queue the
+        # refusal for both reads.
+        Cosmos.Fake.queue_error(unquote(Macro.escape(reason)))
+        Cosmos.Fake.queue_error(unquote(Macro.escape(reason)))
 
-      {:ok, view, html} = live(conn, "/edges/#{id}")
+        {:ok, view, html} = live(conn, "/edges/#{id}")
 
-      assert html =~ "Rate limited"
-      assert html =~ "Retry"
-      refute html =~ "{:error"
-      refute html =~ "{:rate_limited"
+        assert html =~ "Rate limited"
+        assert html =~ "Retry"
+        refute html =~ "could not be reached"
+        refute html =~ "{:error"
+        refute html =~ "budget_exhausted"
+        refute html =~ "throttled"
 
-      # Once reads are admitted again, the retry event loads the page in place.
-      Application.delete_env(:edge_linkouts, :rate_limiter)
-      render_click(view, "retry", %{})
+        # Once reads are admitted again, the retry event loads the page in place.
+        render_click(view, "retry", %{})
+        assert render(view) =~ "This relationship states that"
+      end
+    end
 
-      assert render(view) =~ "This relationship states that"
+    test "a store outage says so, distinct from rate limiting", %{conn: conn, id: id} do
+      Cosmos.Fake.queue_error({:http, 503, "unavailable"})
+      Cosmos.Fake.queue_error({:http, 503, "unavailable"})
+
+      {:ok, _view, html} = live(conn, "/edges/#{id}")
+
+      assert html =~ "could not be reached"
+      refute html =~ "Rate limited"
+      refute html =~ "503"
     end
 
     test "a corrupt blob names the reason instead of a generic failure", %{conn: conn} do

@@ -26,6 +26,9 @@ config :phoenix,
 # tree starts it (programmable documents, failures, latency, call log). The File backend
 # instance is pointed at the committed contract fixtures so tests can exercise it too.
 config :edge_linkouts,
+  # Tests reseed the shared Fake between cases, so a 30 s result cache on the shared Dedupe would
+  # serve one test's documents to the next. Tests of the cache start their own instance.
+  dedupe_ttl_ms: 0,
   cosmos_backend: EdgeLinkouts.Cosmos.Fake,
   start_cosmos_fake: true,
   cosmos_file: Path.expand("../test/fixtures/contract/docs.ndjson", __DIR__)
