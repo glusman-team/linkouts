@@ -33,7 +33,8 @@
     # DailyMed SPL ids arrive as "dailymed:<uuid>" in the drug approvals KG.
     "DAILYMED" => "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=$value",
     # FDA application numbers reach the label browser by NDA/ANDA/BLA number.
-    "FDA.APPLICATION" => "https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=overview.process&ApplNo=$value"
+    "FDA.APPLICATION" =>
+      "https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=overview.process&ApplNo=$value"
   },
 
   # Value-shape rewrites applied before the URL template. The legacy code special-cased these:

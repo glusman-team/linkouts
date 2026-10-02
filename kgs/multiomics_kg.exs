@@ -18,17 +18,24 @@
 
     # The Perl read the direction off the sign of relationship_strength and then chose between
     # two phrasings depending on whether the predicate was "causes".
+    # Each optional word carries its own leading space, so an absent strength leaves no gap:
+    # "is correlated with", never "is  correlated with". direction_word is the bare form for the
+    # start of the causes phrasing.
     "direction" =>
-      {:if, [{:lt, "relationship_strength", 0}], "negatively",
-       {:if, [{:gt, "relationship_strength", 0}], "positively"}},
+      {:if, [{:lt, "relationship_strength", 0}], " negatively",
+       {:if, [{:gt, "relationship_strength", 0}], " positively"}},
+    "direction_word" =>
+      {:if, [{:lt, "relationship_strength", 0}], "negatively ",
+       {:if, [{:gt, "relationship_strength", 0}], "positively "}},
 
     # "(but not significantly)" was appended inline in the legacy sentence rather than left to the
     # evidence panel, because it changes what the sentence claims.
     "significance" => {:if, [{:eq, "significant", "NO"}], " (but not significantly)"},
+    "significance_word" => {:if, [{:eq, "significant", "NO"}], "(but not significantly) "},
     "predicate_words" => {:humanize, "predicate"},
     "relation" =>
-      {:if, [{:eq, "predicate", "biolink:causes"}], "{direction}{significance} affects",
-       "is {direction}{significance} {predicate_words}"},
+      {:if, [{:eq, "predicate", "biolink:causes"}], "{direction_word}{significance_word}affects",
+       "is{direction}{significance} {predicate_words}"},
     "qualifier" =>
       {:if, [{:present, "qualifier_domain"}], " with {qualifier_domain} = {qualifier_value}"},
     "strength" => {:number, "relationship_strength", :sig2},

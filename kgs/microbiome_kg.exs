@@ -16,13 +16,19 @@
   slots: %{
     "subject" => {:link, "subject_name", "subject"},
     "object" => {:link, "object_name", "object"},
+    # Each optional word carries its own leading space, so an absent strength leaves no gap:
+    # "is correlated with", never "is  correlated with". direction_word is the bare form for the
+    # start of the causes phrasing.
     "direction" =>
-      {:if, [{:lt, "relationship_strength", 0}], "negatively",
-       {:if, [{:gt, "relationship_strength", 0}], "positively"}},
+      {:if, [{:lt, "relationship_strength", 0}], " negatively",
+       {:if, [{:gt, "relationship_strength", 0}], " positively"}},
+    "direction_word" =>
+      {:if, [{:lt, "relationship_strength", 0}], "negatively ",
+       {:if, [{:gt, "relationship_strength", 0}], "positively "}},
     "predicate_words" => {:humanize, "predicate"},
     "relation" =>
-      {:if, [{:eq, "predicate", "biolink:causes"}], "{direction} affects",
-       "is {direction} {predicate_words}"},
+      {:if, [{:eq, "predicate", "biolink:causes"}], "{direction_word}affects",
+       "is{direction} {predicate_words}"},
     "strength" => {:number, "relationship_strength", :sig2},
     "sample_size" => {:number, "sample_size", :int},
     "p_value" => {:number, "p_value", :sig2},

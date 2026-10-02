@@ -3,9 +3,9 @@ defmodule EdgeLinkouts.Display.Value do
   The declarative value grammar that KG configs are written in.
 
   A KG config never contains Elixir. It describes what to show, and this module interprets it
-  against a resolved edge document. The grammar is deliberately small — five value forms and four
-  conditions — because it has to cover six knowledge graphs whose Perl originals were each written
-  by hand, and every form added here is a form a curator has to learn.
+  against a resolved edge document. The grammar is kept small on purpose. Every form exists because a legacy KGinfo/*.pl file needed it,
+  and each one added is another form a curator has to learn. The full list with examples is in
+  `docs/pages/config-reference.md`.
 
   Value forms:
 

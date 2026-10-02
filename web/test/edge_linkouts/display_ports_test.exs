@@ -255,18 +255,23 @@ defmodule EdgeLinkouts.DisplayPortsTest do
     end
   end
 
-  describe "grammar edges" do
-    test "a non-numeric strength does not crash the direction word" do
-      # Sources spell a missing number "NA"; the condition is false rather than raising.
-      doc = pair(%{"predicate" => "biolink:correlated_with", "relationship_strength" => "NA"})
+  describe "missing numbers" do
+    # The CLI drops "NA", "None" and similar placeholders at ingest, so a missing number reaches a
+    # config as an absent field, never as a string. These cover that case, which is the real one.
 
-      assert sentence("multiomics-kg", doc) =~ "TNF is  correlated with" or
-               sentence("multiomics-kg", doc) =~ "TNF is correlated with"
+    test "an absent strength leaves out the direction word and keeps single spacing" do
+      doc = pair(%{"predicate" => "biolink:correlated_with"})
+
+      text = sentence("multiomics-kg", doc)
+
+      # The direction slot renders nothing, so its surrounding spaces must not double up.
+      refute text =~ "  "
+      assert text =~ "TNF is correlated with type 2 diabetes"
     end
 
-    test "an NA p-value renders as given rather than as a number" do
-      doc = pair(%{"predicate" => "biolink:correlated_with", "p_value" => "NA"})
-      assert evidence("multiomics-kg", doc)["p-value"] == "NA"
+    test "an absent p-value omits the row instead of rendering an empty one" do
+      doc = pair(%{"predicate" => "biolink:correlated_with"})
+      refute Map.has_key?(evidence("multiomics-kg", doc), "p-value")
     end
   end
 end
