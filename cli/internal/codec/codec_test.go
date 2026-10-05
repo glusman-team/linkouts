@@ -507,3 +507,165 @@ func TestAddVersionRollsBackOnFailure(t *testing.T) {
 		t.Errorf("a failed AddVersion left %d versions behind, want %d", len(blob.Versions), before)
 	}
 }
+
+// The index document is the one the Elixir reader must reproduce byte for byte, and it is nested
+// three deep (kgs → versions → counts), so every level has to sort.
+func TestPoolIndexCanonicalForm(t *testing.T) {
+	index := PoolIndex{Schema: PoolIndexSchema}
+	index.Set("zeta-kg", "1.0.0", 10, 4, "2026-01-01T00:00:00Z")
+	index.Set("alpha-kg", "1.16.0", 130211, 1024, "2026-01-02T00:00:00Z")
+	index.Set("alpha-kg", "1.11.2", 129807, 1024, "2026-01-01T00:00:00Z")
+
+	raw, err := Marshal(index)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	want := `{"kgs":{"alpha-kg":{"versions":{"1.11.2":{"edges":129807,"sampled":1024,` +
+		`"sampled_at":"2026-01-01T00:00:00Z"},"1.16.0":{"edges":130211,"sampled":1024,` +
+		`"sampled_at":"2026-01-02T00:00:00Z"}}},"zeta-kg":{"versions":{"1.0.0":{"edges":10,` +
+		`"sampled":4,"sampled_at":"2026-01-01T00:00:00Z"}}}},"schema":"edgelinkouts.pool_index/1"}`
+	if string(raw) != want {
+		t.Errorf("canonical index =\n%s\nwant\n%s", raw, want)
+	}
+
+	encoded, err := EncodeJSON(index, nil, 0)
+	if err != nil {
+		t.Fatalf("EncodeJSON: %v", err)
+	}
+	var back PoolIndex
+	if err := DecodeJSON(encoded, nil, &back); err != nil {
+		t.Fatalf("DecodeJSON: %v", err)
+	}
+	if back.Schema != PoolIndexSchema {
+		t.Errorf("schema = %q", back.Schema)
+	}
+	rel := back.KGs["alpha-kg"].Versions["1.16.0"]
+	if rel.Edges != 130211 || rel.Sampled != 1024 || rel.SampledAt != "2026-01-02T00:00:00Z" {
+		t.Errorf("round-tripped release = %+v", rel)
+	}
+	if len(back.KGs) != 2 || len(back.KGs["alpha-kg"].Versions) != 2 {
+		t.Errorf("round-tripped index shape = %v", back.KGs)
+	}
+}
+
+// Reloading a release must not shrink its weight, or random would drift away from it.
+func TestPoolIndexSetKeepsTheLargerEdgeCount(t *testing.T) {
+	index := PoolIndex{Schema: PoolIndexSchema}
+	index.Set("kg", "1.0.0", 130211, 1024, "2026-01-01T00:00:00Z")
+	index.Set("kg", "1.0.0", 7, 7, "2026-01-02T00:00:00Z")
+	got := index.KGs["kg"].Versions["1.0.0"]
+	if got.Edges != 130211 {
+		t.Errorf("edges = %d, want the larger 130211", got.Edges)
+	}
+	// The fresher sample size and timestamp still describe the pool that is on disk now.
+	if got.Sampled != 7 || got.SampledAt != "2026-01-02T00:00:00Z" {
+		t.Errorf("entry = %+v, want sampled 7 at the later time", got)
+	}
+}
+
+func TestPoolIndexRemoveDropsTheGraphWithItsLastRelease(t *testing.T) {
+	index := PoolIndex{Schema: PoolIndexSchema}
+	index.Set("kg", "1.0.0", 5, 5, "t1")
+	index.Set("kg", "2.0.0", 6, 6, "t2")
+	if !index.Remove("kg", "1.0.0") {
+		t.Fatal("Remove reported nothing removed")
+	}
+	if len(index.KGs["kg"].Versions) != 1 {
+		t.Errorf("versions = %v, want only 2.0.0 left", index.KGs["kg"].Versions)
+	}
+	if !index.Remove("kg", "2.0.0") {
+		t.Fatal("Remove reported nothing removed")
+	}
+	if _, stillThere := index.KGs["kg"]; stillThere {
+		t.Error("a graph with no releases left was kept in the index")
+	}
+	if index.Remove("kg", "1.0.0") {
+		t.Error("removing an absent release reported success")
+	}
+	if index.Remove("other", "1.0.0") {
+		t.Error("removing from an absent graph reported success")
+	}
+}
+
+// Removing the version a delta points at would leave that delta unresolvable forever, so the
+// dependent has to be materialized in full first — and must resolve to exactly what it did before.
+func TestRemoveVersionMaterializesDependents(t *testing.T) {
+	base := Doc{"id": "abc", "subject": "DRUG:X", "note": "old"}
+	middle := Doc{"id": "abc", "subject": "DRUG:X", "note": "new"}
+	latest := Doc{"id": "abc", "subject": "DRUG:Y", "note": "new"}
+
+	blob, err := NewBlob("1.0.0", base)
+	if err != nil {
+		t.Fatalf("NewBlob: %v", err)
+	}
+	if err := blob.AddVersion("2.0.0", "1.0.0", middle, base); err != nil {
+		t.Fatalf("AddVersion 2.0.0: %v", err)
+	}
+	if err := blob.AddVersion("3.0.0", "2.0.0", latest, middle); err != nil {
+		t.Fatalf("AddVersion 3.0.0: %v", err)
+	}
+	if blob.Versions["2.0.0"].IsFull() || blob.Versions["3.0.0"].IsFull() {
+		t.Fatal("the fixture should store both later versions as deltas")
+	}
+
+	removed, err := blob.RemoveVersion("1.0.0")
+	if err != nil {
+		t.Fatalf("RemoveVersion: %v", err)
+	}
+	if !removed {
+		t.Fatal("RemoveVersion reported the version was absent")
+	}
+	if _, still := blob.Versions["1.0.0"]; still {
+		t.Error("1.0.0 was not removed")
+	}
+	if !blob.Versions["2.0.0"].IsFull() {
+		t.Error("2.0.0 was left as a delta pointing at a version that no longer exists")
+	}
+	got, err := blob.Resolve("2.0.0")
+	if err != nil {
+		t.Fatalf("Resolve 2.0.0 after removal: %v", err)
+	}
+	if got["note"] != "new" || got["subject"] != "DRUG:X" {
+		t.Errorf("2.0.0 resolved to %#v, want the document it had before", got)
+	}
+	// 3.0.0 still deltas against 2.0.0, which is now full, so the chain still walks.
+	got3, err := blob.Resolve("3.0.0")
+	if err != nil {
+		t.Fatalf("Resolve 3.0.0 after removal: %v", err)
+	}
+	if got3["subject"] != "DRUG:Y" {
+		t.Errorf("3.0.0 resolved to %#v", got3)
+	}
+	// The result must still survive the wire, which is the only form it will ever be read in.
+	encoded, err := blob.Encode(nil, 0)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	back, err := DecodeBlob(encoded, nil)
+	if err != nil {
+		t.Fatalf("DecodeBlob: %v", err)
+	}
+	if keys := back.VersionKeys(); len(keys) != 2 {
+		t.Errorf("re-encoded blob holds %v, want 2.0.0 and 3.0.0", keys)
+	}
+}
+
+func TestRemoveVersionAbsentAndLast(t *testing.T) {
+	blob, err := NewBlob("1.0.0", Doc{"id": "abc"})
+	if err != nil {
+		t.Fatalf("NewBlob: %v", err)
+	}
+	if removed, err := blob.RemoveVersion("9.9.9"); err != nil || removed {
+		t.Errorf("removing an absent version = (%v, %v), want (false, nil)", removed, err)
+	}
+	if len(blob.Versions) != 1 {
+		t.Errorf("an absent removal changed the blob: %v", blob.VersionKeys())
+	}
+	removed, err := blob.RemoveVersion("1.0.0")
+	if err != nil || !removed {
+		t.Fatalf("removing the only version = (%v, %v)", removed, err)
+	}
+	if len(blob.Versions) != 0 {
+		t.Errorf("versions = %v, want none — the caller deletes the document", blob.VersionKeys())
+	}
+}

@@ -19,40 +19,41 @@
 }
 
 /* daisyUI theme plugin.
-  We ship with two themes, a light one inspired on Phoenix colors and a dark one inspired
-  on Elixir colors. Build your own at: https://daisyui.com/theme-generator/ */
+   Two themes tuned for long reading sessions over scientific content: a cool paper light
+   theme and a slate dark theme, both with one deep-teal accent. Colour carries meaning
+   only where the markup also spells it out (diff markers, state kickers). */
 @plugin "daisyui/packages/bundle/daisyui-theme" {
   name: "dark";
   default: false;
   prefersdark: true;
   color-scheme: "dark";
-  --color-base-100: oklch(30.33% 0.016 252.42);
-  --color-base-200: oklch(25.26% 0.014 253.1);
-  --color-base-300: oklch(20.15% 0.012 254.09);
-  --color-base-content: oklch(97.807% 0.029 256.847);
-  --color-primary: oklch(58% 0.233 277.117);
-  --color-primary-content: oklch(96% 0.018 272.314);
-  --color-secondary: oklch(58% 0.233 277.117);
-  --color-secondary-content: oklch(96% 0.018 272.314);
-  --color-accent: oklch(60% 0.25 292.717);
-  --color-accent-content: oklch(96% 0.016 293.756);
-  --color-neutral: oklch(37% 0.044 257.287);
-  --color-neutral-content: oklch(98% 0.003 247.858);
-  --color-info: oklch(58% 0.158 241.966);
-  --color-info-content: oklch(97% 0.013 236.62);
-  --color-success: oklch(60% 0.118 184.704);
-  --color-success-content: oklch(98% 0.014 180.72);
-  --color-warning: oklch(66% 0.179 58.318);
-  --color-warning-content: oklch(98% 0.022 95.277);
-  --color-error: oklch(58% 0.253 17.585);
-  --color-error-content: oklch(96% 0.015 12.422);
-  --radius-selector: 0.25rem;
-  --radius-field: 0.25rem;
-  --radius-box: 0.5rem;
-  --size-selector: 0.21875rem;
-  --size-field: 0.21875rem;
-  --border: 1.5px;
-  --depth: 1;
+  --color-base-100: oklch(16% 0.012 180);
+  --color-base-200: oklch(21% 0.014 180);
+  --color-base-300: oklch(29% 0.016 180);
+  --color-base-content: oklch(92% 0.012 180);
+  --color-primary: oklch(78% 0.13 175);
+  --color-primary-content: oklch(16% 0.03 175);
+  --color-secondary: oklch(70% 0.02 250);
+  --color-secondary-content: oklch(16% 0.01 250);
+  --color-accent: oklch(78% 0.13 175);
+  --color-accent-content: oklch(16% 0.03 175);
+  --color-neutral: oklch(38% 0.02 180);
+  --color-neutral-content: oklch(96% 0.008 180);
+  --color-info: oklch(72% 0.12 230);
+  --color-info-content: oklch(16% 0.02 230);
+  --color-success: oklch(76% 0.14 155);
+  --color-success-content: oklch(16% 0.03 155);
+  --color-warning: oklch(78% 0.13 75);
+  --color-warning-content: oklch(18% 0.04 75);
+  --color-error: oklch(72% 0.16 25);
+  --color-error-content: oklch(16% 0.03 25);
+  --radius-selector: 0.375rem;
+  --radius-field: 0.375rem;
+  --radius-box: 0.625rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
   --noise: 0;
 }
 
@@ -61,33 +62,33 @@
   default: true;
   prefersdark: false;
   color-scheme: "light";
-  --color-base-100: oklch(98% 0 0);
-  --color-base-200: oklch(96% 0.001 286.375);
-  --color-base-300: oklch(92% 0.004 286.32);
-  --color-base-content: oklch(21% 0.006 285.885);
-  --color-primary: oklch(70% 0.213 47.604);
-  --color-primary-content: oklch(98% 0.016 73.684);
-  --color-secondary: oklch(55% 0.027 264.364);
-  --color-secondary-content: oklch(98% 0.002 247.839);
-  --color-accent: oklch(0% 0 0);
-  --color-accent-content: oklch(100% 0 0);
-  --color-neutral: oklch(44% 0.017 285.786);
-  --color-neutral-content: oklch(98% 0 0);
-  --color-info: oklch(62% 0.214 259.815);
-  --color-info-content: oklch(97% 0.014 254.604);
-  --color-success: oklch(70% 0.14 182.503);
-  --color-success-content: oklch(98% 0.014 180.72);
-  --color-warning: oklch(66% 0.179 58.318);
-  --color-warning-content: oklch(98% 0.022 95.277);
-  --color-error: oklch(58% 0.253 17.585);
-  --color-error-content: oklch(96% 0.015 12.422);
-  --radius-selector: 0.25rem;
-  --radius-field: 0.25rem;
-  --radius-box: 0.5rem;
-  --size-selector: 0.21875rem;
-  --size-field: 0.21875rem;
-  --border: 1.5px;
-  --depth: 1;
+  --color-base-100: oklch(98.5% 0.004 180);
+  --color-base-200: oklch(95.5% 0.006 180);
+  --color-base-300: oklch(89% 0.01 180);
+  --color-base-content: oklch(22% 0.02 180);
+  --color-primary: oklch(48% 0.1 175);
+  --color-primary-content: oklch(98% 0.01 175);
+  --color-secondary: oklch(45% 0.02 250);
+  --color-secondary-content: oklch(98% 0.005 250);
+  --color-accent: oklch(48% 0.1 175);
+  --color-accent-content: oklch(98% 0.01 175);
+  --color-neutral: oklch(42% 0.02 180);
+  --color-neutral-content: oklch(98% 0.005 180);
+  --color-info: oklch(50% 0.11 230);
+  --color-info-content: oklch(98% 0.01 230);
+  --color-success: oklch(45% 0.12 155);
+  --color-success-content: oklch(98% 0.01 155);
+  --color-warning: oklch(50% 0.12 75);
+  --color-warning-content: oklch(98% 0.02 75);
+  --color-error: oklch(50% 0.17 25);
+  --color-error-content: oklch(98% 0.01 25);
+  --radius-selector: 0.375rem;
+  --radius-field: 0.375rem;
+  --radius-box: 0.625rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
   --noise: 0;
 }
 
@@ -104,52 +105,758 @@
 
 /* ------------------------------------------------------------------ EdgeLinkouts */
 
+/* Atkinson Hyperlegible Next, self-hosted (SIL OFL 1.1, vendored from Google Fonts).
+   Chosen for legibility of long scientific prose and of look-alike characters in
+   identifiers; the variable file covers every weight the app sets. */
+@font-face {
+  font-family: "Atkinson Hyperlegible Next";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/atkinson-hyperlegible-next-latin.woff2") format("woff2");
+}
+
+:root {
+  --font-sans: "Atkinson Hyperlegible Next", system-ui, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", monospace;
+}
+
+html {
+  font-family: var(--font-sans);
+}
+
+code, kbd, pre {
+  font-family: var(--font-mono);
+}
+
 /* Visible keyboard focus in both themes. */
 :focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
-/* Inline SVG relationship diagram. Colors come from the active daisyUI theme
-   variables, so the same markup works under [data-theme=dark] and light. */
-.edge-diagram-box {
-  fill: var(--color-base-200);
-  stroke: var(--color-neutral);
-  stroke-width: 1.5;
-}
-.edge-diagram-name {
-  fill: var(--color-base-content);
-  font-size: 15px;
-  font-weight: 600;
-}
-.edge-diagram-curie {
-  fill: var(--color-base-content);
-  font-size: 12px;
-  opacity: 0.75;
-}
-.edge-diagram-line {
-  stroke: var(--color-base-content);
-  stroke-width: 1.5;
-}
-.edge-diagram-arrow {
-  fill: var(--color-base-content);
-}
-.edge-diagram-predicate {
-  fill: var(--color-base-content);
-  font-size: 12px;
-  font-style: italic;
+/* --- shell ------------------------------------------------------------------- */
+
+.research-notice {
+  margin: 0;
+  padding: 0.4rem 1rem;
+  text-align: center;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: color-mix(in oklab, var(--color-base-content) 72%, var(--color-base-100));
+  background: var(--color-base-200);
+  border-bottom: 1px solid var(--color-base-300);
 }
 
-/* Version diff. Color is never the only signal: every line also carries a +/- marker
-   in the markup and a visually-hidden word (added/removed/changed) for screen readers. */
+.site-header {
+  border-bottom: 1px solid var(--color-base-300);
+  background: var(--color-base-100);
+}
+
+.site-header-inner {
+  margin-inline: auto;
+  max-width: 64rem;
+  /* 2rem of padding-inline matches main's, so the brand and the page content share one
+     left rail at every width. */
+  padding: 0.65rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* One height for every header control (button, link-button, toggle), so the random-edge
+   button and the theme toggle sit as an aligned pair on one row. */
+.site-header-inner .btn {
+  height: 2.25rem;
+  min-height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  padding-inline: 0.75rem;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  color: var(--color-base-content);
+}
+
+.site-footer {
+  border-top: 1px solid var(--color-base-300);
+  margin-top: 4rem;
+}
+
+.site-footer p {
+  margin-inline: auto;
+  max-width: 64rem;
+  padding: 1.25rem 2rem;
+  font-size: 0.8rem;
+  color: color-mix(in oklab, var(--color-base-content) 65%, var(--color-base-100));
+}
+
+/* --- shared bits -------------------------------------------------------------- */
+
+.section-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  margin-bottom: 0.6rem;
+}
+
+.ext-link {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+.ext-link:hover {
+  text-decoration-thickness: 2px;
+}
+
+.ext-icon {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-left: 0.15em;
+  margin-right: 0.15em;
+  vertical-align: baseline;
+  opacity: 0.75;
+}
+
+.btn-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--color-primary);
+  font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-field);
+  background: var(--color-base-200);
+  color: var(--color-base-content);
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+}
+
+.copy-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.copy-btn.is-copied {
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.count-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: var(--color-base-200);
+  border: 1px solid var(--color-base-300);
+  color: color-mix(in oklab, var(--color-base-content) 75%, var(--color-base-100));
+  vertical-align: middle;
+}
+
+.version-pill {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--color-primary) 14%, var(--color-base-100));
+  color: var(--color-primary);
+  border: 1px solid color-mix(in oklab, var(--color-primary) 35%, var(--color-base-300));
+}
+
+/* --- state pages (empty pool, throttle, outage) -------------------------------- */
+
+.state-page {
+  max-width: 34rem;
+  margin-inline: auto;
+  padding: 4rem 1rem;
+  text-align: center;
+}
+
+.state-kicker {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-base-content) 60%, var(--color-base-100));
+  margin-bottom: 0.5rem;
+}
+
+.state-kicker-warning { color: var(--color-warning); }
+.state-kicker-error { color: var(--color-error); }
+
+.state-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin-bottom: 0.75rem;
+}
+
+.state-body {
+  color: color-mix(in oklab, var(--color-base-content) 78%, var(--color-base-100));
+  line-height: 1.6;
+}
+
+.state-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* --- the edge page --------------------------------------------------------------
+   One measure for every text block and one vertical rhythm, so the page reads as a
+   grid: the article caps the line length, sections step by a fixed gap, and the
+   evidence table keeps a single label column every row aligns to. */
+
+.edge-page {
+  max-width: 56rem;
+  /* Left-aligned to the shell rail, not centered: the headline, the header brand and the
+     evidence table then share one left edge. */
+  margin-inline: 0;
+}
+
+.edge-head {
+  /* Same step as .edge-body's row gap, so the page keeps one vertical rhythm. */
+  margin-bottom: 3rem;
+}
+
+.edge-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  margin-bottom: 0.75rem;
+}
+
+.edge-sentence {
+  font-size: clamp(1.35rem, 1.05rem + 1.6vw, 1.9rem);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.9rem;
+}
+
+.edge-idline {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+}
+
+.edge-idline code {
+  background: var(--color-base-200);
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-field);
+  padding: 0.15rem 0.5rem;
+  font-size: 0.78rem;
+}
+
+/* Explicit single column with a zero floor: an implicit auto track sizes to the widest
+   line's max-content, which lets one long evidence line stretch the page past the
+   viewport and drag the centered container off-centre. */
+.edge-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3rem;
+}
+
+/* The claim and its evidence sit together, as on the legacy page: sentence, then the facts
+   beneath it, before anything a reader has to scroll for. */
+.edge-claim {
+  display: grid;
+  gap: 0.9rem;
+}
+
+/* The text relationship line: subject, relation, object and qualifiers, identifiers inline. */
+.edge-relation {
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.edge-relation code {
+  background: var(--color-base-200);
+  border-radius: var(--radius-field);
+  padding: 0.1rem 0.45rem;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.latest-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--color-success) 18%, var(--color-base-100));
+  color: var(--color-success);
+  border: 1px solid color-mix(in oklab, var(--color-success) 40%, var(--color-base-300));
+  vertical-align: middle;
+}
+
+/* Relationship diagram: wrapping HTML cards, not clipped SVG text. */
+.edge-diagram {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.edge-node {
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-box);
+  background: var(--color-base-100);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.edge-node-role {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-base-content) 55%, var(--color-base-100));
+}
+
+.edge-node-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.edge-node-cat {
+  font-size: 0.8rem;
+  color: color-mix(in oklab, var(--color-base-content) 70%, var(--color-base-100));
+}
+
+.edge-node-id {
+  margin-top: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+}
+
+.edge-node-id code {
+  background: var(--color-base-200);
+  border-radius: var(--radius-field);
+  padding: 0.1rem 0.45rem;
+  overflow-wrap: anywhere;
+}
+
+.edge-rel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  padding: 0 0.25rem;
+  min-width: 7rem;
+}
+
+.edge-rel-arrow {
+  width: 1.6rem;
+  height: 1.6rem;
+  color: color-mix(in oklab, var(--color-base-content) 60%, var(--color-base-100));
+}
+
+.edge-rel-predicate {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.edge-rel-raw {
+  font-size: 0.7rem;
+  color: color-mix(in oklab, var(--color-base-content) 60%, var(--color-base-100));
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 48rem) {
+  .edge-diagram {
+    grid-template-columns: 1fr;
+  }
+
+  .edge-rel {
+    min-width: 0;
+    padding: 0.25rem 0;
+  }
+
+  .edge-rel-arrow {
+    transform: rotate(90deg);
+  }
+}
+
+/* Versions timeline */
+.timeline ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Each li is a step pill plus its "latest" badge, the same pairing as the home page's pill row:
+   two chips side by side, never a badge nested inside the pill. */
+.timeline li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.timeline-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--color-base-300);
+  border-radius: 999px;
+  background: var(--color-base-100);
+  padding: 0.25rem 0.8rem;
+  font-size: 0.82rem;
+  color: var(--color-base-content);
+}
+
+.timeline-step:hover {
+  border-color: var(--color-primary);
+}
+
+.timeline-step[aria-current="page"] {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-content);
+  font-weight: 600;
+}
+
+.timeline-step[aria-current="page"] .count-badge {
+  background: color-mix(in oklab, var(--color-primary-content) 18%, var(--color-primary));
+  border-color: transparent;
+  color: var(--color-primary-content);
+}
+
+.timeline-label {
+  font-family: var(--font-mono);
+}
+
+/* Diff */
+.diff-panel {
+  margin-top: 1rem;
+}
+
+.diff-summary {
+  font-size: 0.88rem;
+  margin-bottom: 0.6rem;
+}
+
+.diff-group {
+  margin-bottom: 0.75rem;
+}
+
+.diff-group h3 {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-base-content) 60%, var(--color-base-100));
+  margin-bottom: 0.3rem;
+}
+
+.diff-group ul, .diff-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.diff-group li, .diff-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.diff-field {
+  font-weight: 600;
+}
+
+.diff-group code, .diff-list code {
+  background: var(--color-base-200);
+  border-radius: var(--radius-field);
+  padding: 0.05rem 0.4rem;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.diff-old {
+  text-decoration: line-through;
+  text-decoration-color: var(--color-error);
+}
+
+.diff-arrow {
+  width: 0.9rem;
+  height: 0.9rem;
+  opacity: 0.6;
+}
+
+.diff-list {
+  margin-top: 0.2rem;
+}
+
+/* Colour is never the only signal: every diff line also carries a +/- marker in the
+   markup and a visually-hidden word (added/removed/changed) for screen readers. */
 .diff-line-added {
   color: var(--color-success);
 }
+
 .diff-line-removed {
   color: var(--color-error);
 }
+
 .diff-line-changed {
   color: var(--color-base-content);
 }
 
+/* Evidence: prose sentences, the way the legacy page ran it — facts as sentences with links
+   inline, no labels for a reader to decode. Same size as the claim line so the two paragraphs
+   read as one argument, with the colour a step softer. */
+.edge-evidence {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: color-mix(in oklab, var(--color-base-content) 80%, var(--color-base-100));
+}
+
+/* A list fold lives inside its sentence: the items past the cap sit behind an inline button
+   (a <details> was block-shaped in some engines and opened a vertical gap), so "…, C,
+   [Show 22 more]" reads as a chip in the middle of the paragraph, and clicking continues the
+   same comma-separated run. */
+.linkout-more {
+  display: inline;
+}
+
+.linkout-more-btn {
+  display: inline;
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1px solid color-mix(in oklab, var(--color-primary) 35%, var(--color-base-300));
+  border-radius: var(--radius-field);
+  background: color-mix(in oklab, var(--color-primary) 10%, var(--color-base-100));
+  color: var(--color-primary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.05rem 0.5rem;
+  margin: 0 0 0 0.15rem;
+  line-height: inherit;
+}
+
+.linkout-more-btn:hover {
+  border-color: var(--color-primary);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 16rem;
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-field);
+  background: var(--color-base-200);
+  padding: 0.12rem 0.55rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--color-base-content);
+  overflow-wrap: anywhere;
+}
+
+a.chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+@media (max-width: 40rem) {
+  .edge-body {
+    gap: 2.25rem;
+  }
+}
+
+/* About block */
+.edge-about p {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: color-mix(in oklab, var(--color-base-content) 82%, var(--color-base-100));
+  margin-bottom: 0.6rem;
+}
+
 /* This file is for your main application CSS */
+
+/* --- the KG bar (root page) ------------------------------------------------------
+   One row per knowledge graph: the name, the identifier it is registered under, and its
+   releases as pills. A pill is a random relationship from that release and the name a random
+   one from any release, so the bar is the entry point for "show me something from this graph".
+   The pill row is measured in the browser (assets/js/app.js) because only the browser knows
+   the window width and the real font metrics; whatever does not fit collapses behind the "…"
+   chip and the chip expands the row on click. */
+
+.bar-notice {
+  margin-bottom: 1.25rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-field);
+  border: 1px solid color-mix(in oklab, var(--color-warning) 45%, var(--color-base-300));
+  background: color-mix(in oklab, var(--color-warning) 12%, var(--color-base-100));
+  color: color-mix(in oklab, var(--color-base-content) 85%, var(--color-base-100));
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.bar-head {
+  margin-bottom: 1.5rem;
+}
+
+.bar-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.bar-sub {
+  margin-top: 0.4rem;
+  line-height: 1.6;
+  color: color-mix(in oklab, var(--color-base-content) 72%, var(--color-base-100));
+}
+
+.bar-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.kg-row {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-box);
+  background: var(--color-base-100);
+}
+
+.kg-ident {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.kg-name {
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: var(--color-base-content);
+  overflow-wrap: anywhere;
+}
+
+a.kg-name:hover {
+  color: var(--color-primary);
+}
+
+.kg-source {
+  font-size: 0.8rem;
+}
+
+.kg-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  color: color-mix(in oklab, var(--color-base-content) 65%, var(--color-base-100));
+}
+
+.kg-canonical {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+  color: color-mix(in oklab, var(--color-base-content) 70%, var(--color-base-100));
+}
+
+/* One measured line. .is-expanded wraps and shows every pill, which is what the "…" chip does. */
+.version-pills {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.version-pills.is-expanded {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+/* Each release renders as pill + optional badge inside a display:contents group, so the pair
+   is one flex item and the badge can never land on the pill's border. */
+.version-pill-group {
+  display: contents;
+}
+
+.version-pills .version-pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+}
+
+.version-pills .version-pill.is-hidden {
+  display: none;
+}
+
+/* The "…" button in the pill row: an inline button, not a chip block. */
+.kg-more {
+  flex: 0 0 auto;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+/* The KG name on an edge page: a link back into that graph's random pick. */
+a.kg-link {
+  color: inherit;
+  font-weight: 600;
+}
+
+a.kg-link:hover {
+  color: var(--color-primary);
+}

@@ -10,8 +10,9 @@ cli/bin/linkouts rig path/to/edges.ndjson --exs > kgs/my_kg.exs
 ```
 
 `rig` reads the edges and writes a config that **compiles as-is**. It lists the predicates it saw
-and has one evidence row for every field the KG asserts. Each row is gated on the field being
-present, so an edge that lacks a field never shows an empty row. Fields that are lists of CURIEs
+and has one evidence sentence for every field the KG asserts, phrased "Field name: …" so the
+reader never meets a storage key. Each sentence is gated on the field being present, so an edge
+that lacks a field never shows a sentence with a hole in it. Fields that are lists of CURIEs
 are already linked.
 
 Before writing the config, run `rig` without `--exs` for a report of what is in the file: which
@@ -21,8 +22,11 @@ predicates appear, which fields each one carries, and how often.
 
 Open the file and change three things.
 
-**The name.** This must equal the `<name>` part of the key you load with. For
-`my-kg-1.0.0`, use `name: "my-kg"`. A page whose KG name has no config falls back to a generic view.
+**The name.** This must equal the `<name>` part of the key you load with, in its canonical
+infores form. For a load of `infores:my-kp-1.0.0`, use `name: "infores:my-kp"`. The name without
+the prefix is its **slug** (`my-kp`): that is what the stored documents carry, what the root page
+shows a row for, and what a URL uses (`/my-kp/random`). A page whose KG name has no config falls
+back to a generic view, and its slug still works in a URL.
 
 **The sentence.** The starter's `edge:` reads "X predicate Y". Most KGs want the wording to
 depend on the predicate:
@@ -42,7 +46,8 @@ slots: %{
 edge: "This relationship states that {subject} {relation} {object}."
 ```
 
-**The evidence rows.** Delete the rows a reviewer does not need and relabel the rest.
+**The evidence sentences.** Delete the sentences a reviewer does not need and rewrite the rest
+in the KG's voice — the legacy KGinfo pages read as prose, and so should these.
 
 ## 3. Check it
 

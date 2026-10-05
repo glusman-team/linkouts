@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
+	"github.com/glusman-team/edge-linkouts/cli/internal/pipeline"
 	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
 	"github.com/glusman-team/edge-linkouts/cli/internal/version"
 )
@@ -49,7 +50,7 @@ version the document holds and how each is stored (full or delta, and against wh
 				return err
 			}
 			g.logf("%s: %s stored, dictionary %#x", args[0], humanBytes(int64(len(doc.Blob))), doc.DictID)
-			stored, err := dictionaryFor(doc.DictID, dict)
+			stored, err := pipeline.DictionaryFor(doc.DictID, dict)
 			if err != nil {
 				return err
 			}
@@ -108,17 +109,4 @@ func listVersions(blob *codec.Blob) error {
 		printf("%-32s %-28s %d fields, %s resolved\n", k, kind, len(doc), humanBytes(int64(len(raw))))
 	}
 	return nil
-}
-
-// dictionaryFor picks the dictionary a stored frame needs. A mismatch is an error rather than
-// an attempt to decode without one, which would produce garbage.
-func dictionaryFor(storedID uint32, current []byte) ([]byte, error) {
-	currentID := codec.DictID(current)
-	if storedID == currentID {
-		return current, nil
-	}
-	if storedID == 0 {
-		return nil, nil // written without a dictionary
-	}
-	return nil, fmt.Errorf("document was compressed with dictionary %#x; pass it with --dict (this run has %#x)", storedID, currentID)
 }

@@ -11,7 +11,12 @@ defmodule EdgeLinkouts.Display.Segment do
   (the KGX download, `<title>`, the copy-to-clipboard target) and drops links to their labels.
   """
 
-  @type t :: {:text, String.t()} | {:link, String.t(), String.t()}
+  @type t ::
+          {:text, String.t()}
+          | {:link, String.t(), String.t()}
+          # A fold: the list items a long {:list, ...} put behind a "show N more" disclosure.
+          # The payload carries the leading separator, so flattening restores the paragraph.
+          | {:more, [t()]}
 
   @doc "A literal run of text."
   @spec text(String.t()) :: t()
@@ -60,10 +65,25 @@ defmodule EdgeLinkouts.Display.Segment do
     |> Enum.reverse()
   end
 
+  @doc """
+  The full paragraph as one flat segment list, folds expanded.
+
+  A `{:more, inner}` fold is a presentation cut, not a content cut: extracting links or plain
+  text from a rendered list must see the items behind the disclosure too.
+  """
+  @spec flatten([t()]) :: [t()]
+  def flatten(segments) do
+    Enum.flat_map(segments, fn
+      {:more, inner} -> flatten(inner)
+      seg -> [seg]
+    end)
+  end
+
   @doc "Segments as a single plain-text string, links reduced to their labels."
   @spec to_text([t()]) :: String.t()
   def to_text(segments) do
     segments
+    |> flatten()
     |> Enum.map(fn
       {:text, s} -> s
       {:link, _href, label} -> label

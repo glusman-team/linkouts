@@ -90,13 +90,20 @@ def pick_old() -> list[dict]:
 
 def mutate(edges: list[dict]) -> list[dict]:
     """Same ids, changed content: one pure no-op, one $set, one $add, one $del."""
+    # The flipped status must not contradict the predicate: real DAKP edges only ever put
+    # "off_label_use" on biolink:applied_to_treat (treats is always approved_for_condition),
+    # so every other predicate degrades to the enum's "not_provided" instead.
     out = []
     for i, edge in enumerate(edges):
         e = json.loads(json.dumps(edge))  # deep copy
         if i % 4 == 0:
             pass  # unchanged -> must encode as {"$t": "<base>"}
         elif i % 4 == 1:
-            e["clinical_approval_status"] = "off_label_use"
+            e["clinical_approval_status"] = (
+                "off_label_use"
+                if e.get("predicate") == "biolink:applied_to_treat"
+                else "not_provided"
+            )
             if isinstance(e.get("number_of_cases"), (int, float)):
                 e["number_of_cases"] = int(e["number_of_cases"]) + 7
         elif i % 4 == 2:

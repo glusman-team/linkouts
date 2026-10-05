@@ -2,8 +2,8 @@ defmodule EdgeLinkouts.RateLimiter do
   @moduledoc """
   RU budget for the web app: a sliding one-second window over `:atomics`.
 
-  The free tier is 1000 RU/s shared with the CLI; the web app is budgeted at
-  `RU_BUDGET_WEB` (default 450). Two operations per Cosmos call:
+  The free tier is 1000 RU/s shared with the CLI (which gets the 75% burst budget); the
+  web app is budgeted at `RU_BUDGET_WEB` (default 150). Two operations per Cosmos call:
 
   - `allow?/2` before the call, from an estimate - refuses with `false` when the current
     window cannot fit it, so the caller returns "rate limited" instead of blocking.
@@ -23,7 +23,7 @@ defmodule EdgeLinkouts.RateLimiter do
   import Bitwise
 
   @window_ms 1_000
-  @default_budget 450
+  @default_budget 150
   @mask 0xFFFFFFFF
 
   def start_link(opts \\ []) do

@@ -36,9 +36,12 @@ func newLoadCmd(g *globals) *cobra.Command {
 		Short: "Join KGX nodes and edges, then store one versioned blob per edge",
 		Long: `load reads a KGX release and writes one Cosmos DB document per edge UUID.
 
-The key names the release being stored, as "<kg>-<version>" (drug-approvals-kg-1.11.2). It
-selects the display configuration the web app uses and is the version a later release diffs
-against. The key is opaque to storage: nothing per-KG is stored on the edge itself.
+The key names the release being stored, as "<kg>-<version>" (infores:drugapprovals-kp-1.11.2).
+It selects the display configuration the web app uses and is the version a later release diffs
+against. The KG name is also stored on every document as its slug ("k": "drugapprovals-kp", the
+name without the infores: prefix), and the release gets its own random pool document plus an
+entry in the pool index, which is how /random can pick inside one KG or one release with point
+reads alone.
 
 Each edge is joined to its subject and object nodes to attach subject_name, subject_category,
 object_name and object_category, then every nullish value is stripped. An unresolvable node

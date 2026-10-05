@@ -19,7 +19,7 @@ offline against a file store (--store file:PATH), which is how the tests and CI 
       --db string           Cosmos database (default $COSMOS_DB or edge_linkouts)
       --engine string       join engine: chdb (embedded ClickHouse) or fake (pure Go) (default "chdb")
   -h, --help                help for linkouts
-      --ru-budget float     RU/s ceiling (default $RU_BUDGET_CLI or 450)
+      --ru-budget float     RU/s ceiling (default $RU_BUDGET_CLI or 750)
       --store string        storage backend: cosmos, file:PATH, or mem:// (default "cosmos")
   -v, --verbose             log each step
 ```
@@ -31,6 +31,8 @@ offline against a file store (--store file:PATH), which is how the tests and CI 
 * [linkouts init](linkouts_init.md)	 - Create the Cosmos database and container if they are missing
 * [linkouts load](linkouts_load.md)	 - Join KGX nodes and edges, then store one versioned blob per edge
 * [linkouts probe](linkouts_probe.md)	 - Measure the real cost of the web app's read path
+* [linkouts purge](linkouts_purge.md)	 - Delete stored data: the whole store, one KG, or one release
 * [linkouts rig](linkouts_rig.md)	 - Inspect a KGX file and draft a display configuration for it
+* [linkouts status](linkouts_status.md)	 - Report what the store holds and what it is configured to cost
 * [linkouts train-dict](linkouts_train-dict.md)	 - Train a zstd dictionary from a KG's own documents
 

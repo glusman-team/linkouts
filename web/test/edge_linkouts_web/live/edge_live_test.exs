@@ -20,9 +20,10 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
   end
 
   describe "the linkout page" do
-    test "renders the sentence, diagram labels and evidence rows at both stored versions", %{
-      id: id
-    } do
+    test "renders the sentence, relationship line and evidence paragraph at both stored versions",
+         %{
+           id: id
+         } do
       for version <- [@v1, @v2] do
         doc = Fixtures.resolved(Fixtures.edge_doc(id), version)
         {:ok, _view, html} = live(build_conn(), "/edges/#{id}?version=#{version}")
@@ -31,17 +32,55 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
         assert html =~ doc["subject_name"]
         assert html =~ doc["object_name"]
 
-        # The SVG diagram shows both node names and their CURIEs.
-        assert html =~ "edge-diagram"
+        # The text relationship line carries both names, both CURIEs, and the predicate as words
+        # linked to the biolink model docs — no "biolink:" prefix, no underscores.
+        assert html =~ "edge-relation"
         assert html =~ doc["subject"]
         assert html =~ doc["object"]
-        assert html =~ doc["predicate"]
 
-        # The evidence panel carries at least the always-present search row.
-        assert html =~ "Evidence"
-        assert html =~ "Search product labels"
+        bare = doc["predicate"] |> String.split(":", parts: 2) |> List.last()
+        assert html =~ String.replace(bare, "_", " ")
+        assert html =~ "biolink-model/#{bare}/"
+
+        # The evidence paragraph carries at least the always-present DailyMed search sentence,
+        # as prose: no field-name label anywhere.
+        assert html =~ "On DailyMed, search"
+        refute html =~ ~s(Assertion method)
+        refute html =~ "agent_type is"
       end
     end
+
+    test "crowded approvals and SPL lists fold inline behind a show-more chip", %{conn: _conn} do
+      # A long list — dozens of ANDA numbers on one stored edge — shows its first few items in
+      # the sentence and folds the rest behind a chip in that very spot, not into a section of
+      # its own. The exact ids stay on the page, one click behind the disclosure.
+      {id, version} = crowded_edge()
+      {:ok, _view, html} = live(build_conn(), "/edges/#{id}?version=#{version}")
+
+      assert html =~ ~s(class="linkout-more")
+      assert html =~ ~r/Show \d+ more/
+      # The rest renders collapsed in the markup; the button reveals it (assets/js/app.js).
+      assert html =~ ~s(class="linkout-more-rest" hidden)
+      assert html =~ "https://fda.report/applications/"
+
+      # The short sentences stay in the paragraph itself.
+      assert html =~ "On DailyMed, search"
+    end
+
+    defp crowded_edge do
+      Fixtures.edge_docs()
+      |> Enum.flat_map(fn doc ->
+        for v <- [@v1, @v2],
+            resolved = Fixtures.resolved(doc, v),
+            length(approvals_of(resolved)) + length(resolved["publications"] || []) > 5 do
+          {doc["id"], v}
+        end
+      end)
+      |> hd()
+    end
+
+    defp approvals_of(resolved),
+      do: resolved["regulatory_approvals"] || resolved["FDA_regulatory_approvals"] || []
 
     test "a full page view, static render plus connected mount, costs one backend read", %{
       conn: conn,
@@ -81,16 +120,18 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
       assert calls_after_load != []
       assert Enum.all?(calls_after_load, &match?({:get_edge, ^id}, &1))
 
-      # The switcher links to every stored version.
-      assert html =~ "?version=#{@v1}"
-      assert html =~ "?version=#{@v2}"
+      # The switcher links to every stored version. A canonical key carries the infores
+      # scheme's colon, which a rendered href percent-encodes.
+      assert html =~ "?version=" <> URI.encode_www_form(@v1)
+      assert html =~ "?version=" <> URI.encode_www_form(@v2)
 
       # Patching is exactly what a switcher link does.
       render_patch(view, "/edges/#{id}?version=#{@v1}")
 
       assert Cosmos.Fake.calls() == calls_after_load
       assert render(view) =~ "aria-current=\"page\""
-      assert render(view) =~ "<strong>#{@v1}</strong>"
+      # The timeline marks the selected version by its release number, not the full key.
+      assert render(view) =~ "1.11.2"
     end
 
     test "an unknown id answers HTTP 404 with the not-found copy", %{conn: conn} do
@@ -141,7 +182,7 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
 
       {:ok, _view, html} = live(conn, "/edges/#{id}")
 
-      assert html =~ "could not be reached"
+      assert html =~ "did not answer"
       refute html =~ "Rate limited"
       refute html =~ "503"
     end
@@ -205,19 +246,19 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
 
       {:ok, _view, html} = live(conn, "/edges/#{id}")
 
-      assert html =~ "Changes from"
+      assert html =~ "differ between"
       assert html =~ "diff-line-added"
       assert html =~ "diff-line-removed"
 
-      # Changed value: old -> new, both visible.
-      assert html =~ "<code>12</code>"
-      assert html =~ "<code>42</code>"
-      assert html =~ "-&gt;"
+      # Changed value: old and new, both visible, labelled rather than just coloured.
+      assert html =~ ~s(class="diff-old")
+      assert html =~ ">12</code>"
+      assert html =~ ">42</code>"
 
-      # Added list element and removed field, each with their own marker.
-      assert html =~ "&quot;PMID:2&quot;"
-      assert html =~ "knowledge_level"
-      assert html =~ "&quot;assertion&quot;"
+      # Added list element and removed field, each in its reader's vocabulary.
+      assert html =~ "PMID:2"
+      assert html =~ "Knowledge level"
+      assert html =~ "assertion"
     end
 
     test "a single-version page says there is nothing earlier to compare", %{conn: conn} do
@@ -247,6 +288,62 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
       # The test conn's host is www.example.com.
       permalink = "http://www.example.com/edges/#{id}"
       assert html =~ URI.encode_www_form(permalink)
+    end
+  end
+
+  describe "the KG-scoped random button" do
+    test "on an edge page the header button stays inside that graph", %{conn: conn, id: id} do
+      {:ok, _view, html} = live(conn, "/edges/#{id}")
+
+      # A reader looking at one graph who asks for a random edge expects another edge from
+      # that graph. A button that could leave the store's current subject is a button nobody
+      # can trust, so the scoping is worth an assertion of its own.
+      assert html =~ ~s(href="/drugapprovals-kp/random")
+      refute html =~ ~s(href="/random")
+    end
+
+    test "the graph's name links to the same scoped pick", %{conn: conn, id: id} do
+      {:ok, _view, html} = live(conn, "/edges/#{id}")
+
+      assert html =~ ~s(class="kg-link")
+      assert html =~ "Drug Approvals KP"
+
+      # The source keeps its own external link beside the name, which is what frees the name
+      # to stay inside this app.
+      assert html =~
+               "https://github.com/NCATSTranslator/Translator-All/wiki/Multiomics-Drug-Approvals-KP"
+    end
+
+    test "a graph with no display config still scopes the button", %{conn: conn} do
+      id = "00000000-0000-4000-8000-0000000000ff"
+
+      Cosmos.Fake.seed(
+        Fixtures.stored(id, %{
+          "infores:unconfigured-kp-1.0.0" => %{
+            "id" => id,
+            "subject" => "a",
+            "predicate" => "biolink:related_to",
+            "object" => "b"
+          }
+        })
+      )
+
+      {:ok, _view, html} = live(conn, "/edges/#{id}")
+
+      assert html =~ ~s(href="/unconfigured-kp/random")
+      # With no config there is no display name, so the canonical name is what a reader gets.
+      assert html =~ "infores:unconfigured-kp"
+    end
+
+    test "a page with no readable document keeps the button global", %{conn: conn} do
+      id = "00000000-0000-4000-8000-0000000000fe"
+      Cosmos.Fake.seed(%{"id" => id, "b" => "not-a-frame"})
+
+      {:ok, _view, html} = live(conn, "/edges/#{id}")
+
+      # There is no graph to scope to until a document has been read, so the button keeps its
+      # whole-store meaning instead of linking to a slug nobody has established.
+      assert html =~ ~s(href="/random")
     end
   end
 

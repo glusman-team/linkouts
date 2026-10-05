@@ -70,6 +70,43 @@ defmodule EdgeLinkouts.Display do
     end
   end
 
+  @infores_prefix "infores:"
+
+  @doc """
+  The slug form of a KG name: the canonical name without its `infores:` registry prefix.
+
+  The slug is what is stored on a document (`k`), what a pool document id is built from, and
+  what a URL carries — `infores:drugapprovals-kp` becomes `/drugapprovals-kp/random`. A name
+  with no prefix is already a slug, so this is safe to call on a URL segment a visitor typed.
+  """
+  @spec slug(String.t() | nil) :: String.t() | nil
+  def slug(nil), do: nil
+  def slug(name), do: String.replace_prefix(name, @infores_prefix, "")
+
+  @doc """
+  The canonical KG name for a slug.
+
+  The config table is consulted first, so the answer is exactly the name a curator declared —
+  including a KG that is not infores-registered, or one registered under a different scheme.
+  A slug with no config expands to the `infores:` form, which is how every graph in this
+  project is registered; a slug that already carries a scheme is returned unchanged rather
+  than getting a second prefix stapled on.
+  """
+  @spec kg_from_slug(String.t() | nil) :: String.t() | nil
+  def kg_from_slug(nil), do: nil
+
+  def kg_from_slug(name) do
+    wanted = slug(name)
+
+    Enum.find_value(configs(), fn %Config{name: declared} ->
+      if slug(declared) == wanted, do: declared
+    end) || expand(wanted)
+  end
+
+  defp expand(slug) do
+    if String.contains?(slug, ":"), do: slug, else: @infores_prefix <> slug
+  end
+
   @doc """
   The KG name a version key belongs to.
 
@@ -111,6 +148,20 @@ defmodule EdgeLinkouts.Display do
     Value.render(config.edge, context(config, doc, version))
   end
 
+  @doc """
+  Renders the text relationship line, when the config declares one.
+
+  The line carries subject, relation, object and every qualifier with the identifiers
+  inline, which is why it replaces the three-box diagram for configs that declare it: a
+  diagram card has exactly three slots and a real relationship has more.
+  """
+  @spec relationship(t(), map(), String.t()) :: [Segment.t()] | nil
+  def relationship(%Config{relationship: nil}, _doc, _version), do: nil
+
+  def relationship(%Config{} = config, doc, version) do
+    Value.render(config.relationship, context(config, doc, version))
+  end
+
   @doc "Renders the short label used for the page title and link previews."
   @spec title(t(), map(), String.t()) :: String.t()
   def title(%Config{title: nil} = config, doc, version) do
@@ -119,7 +170,7 @@ defmodule EdgeLinkouts.Display do
     ctx = context(config, doc, version)
     subject = Value.fetch(ctx, "subject_name") || Value.fetch(ctx, "subject") || "edge"
     object = Value.fetch(ctx, "object_name") || Value.fetch(ctx, "object") || "?"
-    "#{subject} — #{object}"
+    "#{subject} and #{object}"
   end
 
   def title(%Config{} = config, doc, version) do
@@ -127,22 +178,24 @@ defmodule EdgeLinkouts.Display do
   end
 
   @doc """
-  Renders the evidence panel.
+  Renders the evidence block as one paragraph of prose.
 
-  Returns `%{label: [Segment.t()], value: [Segment.t()]}` per section, skipping any whose `:if`
-  conditions fail or whose value renders empty — an evidence row with no data is worse than no
-  row, because it implies the field exists and is blank.
+  Each config entry is a sentence; entries whose `:if` conditions fail, or whose template
+  renders nothing, drop out, and what survives is joined with spaces into one segment list the
+  page prints as a single paragraph. The legacy page ran the same facts as optional labelled
+  lines; as prose, each sentence carries its own meaning, so no field-name label asks the
+  reader to decode what a row is.
   """
-  @spec evidence(t(), map(), String.t()) :: [%{label: [Segment.t()], value: [Segment.t()]}]
+  @spec evidence(t(), map(), String.t()) :: [Segment.t()]
   def evidence(%Config{} = config, doc, version) do
     ctx = context(config, doc, version)
 
-    for section <- config.evidence,
-        Value.all?(Map.get(section, :if, []), ctx),
-        value = Value.render(Map.get(section, :value), ctx),
-        value != [] do
-      %{label: Value.render(Map.get(section, :label), ctx), value: value}
-    end
+    config.evidence
+    |> Enum.filter(&Value.all?(Map.get(&1, :if, []), ctx))
+    |> Enum.map(&Value.render(Map.get(&1, :value), ctx))
+    |> Enum.reject(&(&1 == []))
+    |> Enum.intersperse([Segment.text(" ")])
+    |> List.flatten()
   end
 
   @doc """

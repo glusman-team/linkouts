@@ -26,7 +26,10 @@ defmodule EdgeLinkoutsWeb.EdgeControllerTest do
     assert get_resp_header(conn, "content-type") == ["application/x-ndjson"]
 
     [disposition] = get_resp_header(conn, "content-disposition")
-    assert disposition == ~s(attachment; filename="edge-#{id}-#{@v2}.ndjson")
+    # The version key's colon is illegal in a Windows filename, so the download name turns it
+    # into a hyphen; the body and the ?version= parameter keep the canonical key.
+    assert disposition ==
+             ~s(attachment; filename="edge-#{id}-infores-drugapprovals-kp-1.16.0.ndjson")
   end
 
   test "?version selects that stored version", %{conn: conn, id: id} do

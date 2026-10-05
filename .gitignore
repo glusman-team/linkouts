@@ -38,3 +38,6 @@ erl_crash.dump
 /docs/_build/
 /docs/deps/
 /docs/doc/
+
+# Project-local pi skills (third-party UI/UX skills, installed per checkout)
+/.pi/skills/

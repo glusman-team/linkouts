@@ -56,12 +56,12 @@ func TestRigStarterUsesTheDisplayGrammar(t *testing.T) {
 	}
 }
 
-// Every evidence row is gated on presence, so a starter config never renders an empty row for a
-// field a particular edge lacks.
+// Every evidence sentence is gated on presence, so a starter config never renders a sentence
+// with a hole in it for a field a particular edge lacks.
 func TestRigStarterGatesEveryRowOnPresence(t *testing.T) {
 	for _, line := range strings.Split(rigStarter(t), "\n") {
-		if strings.Contains(line, "%{label:") && !strings.Contains(line, "if: [{:present,") {
-			t.Errorf("evidence row is not gated on presence: %s", strings.TrimSpace(line))
+		if strings.Contains(line, "%{value:") && !strings.Contains(line, "if: [{:present,") {
+			t.Errorf("evidence sentence is not gated on presence: %s", strings.TrimSpace(line))
 		}
 	}
 }
@@ -74,16 +74,16 @@ func TestRigStarterPicksValueFormsFromTheData(t *testing.T) {
 	cases := map[string]string{
 		"publications": `{:list, "publications", {:link, "self", "self"}, ", "}`,
 		"sources":      `{:list, "sources", "{resource_id}", ", "}`,
-		"agent_type":   `{:field, "agent_type"}`,
+		"agent_type":   `{:humanize, "agent_type"}`,
 	}
 	for field, want := range cases {
 		if !strings.Contains(got, want) {
 			t.Errorf("%s: want value spec %s", field, want)
 		}
 	}
-	for _, shown := range []string{`"Subject"`, `"Object"`, `"Predicate"`, `"Id"`} {
-		if strings.Contains(got, "label: "+shown) {
-			t.Errorf("%s is already on the page and should not be an evidence row", shown)
+	for _, shown := range []string{"Subject:", "Object:", "Predicate:", "Id:"} {
+		if strings.Contains(got, "value: \""+shown) {
+			t.Errorf("%s is already on the page and should not be an evidence sentence", shown)
 		}
 	}
 }

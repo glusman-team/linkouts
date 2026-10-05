@@ -50,12 +50,12 @@ offline against a file store (--store file:PATH), which is how the tests and CI 
 	pf.StringVar(&g.container, "container", "", "Cosmos container (default $COSMOS_CONTAINER or "+config.DefaultContainer+")")
 	pf.StringVar(&g.engineKind, "engine", envOr("LINKOUTS_ENGINE", "chdb"), "join engine: chdb (embedded ClickHouse) or fake (pure Go)")
 	pf.StringVar(&g.chdbCache, "chdb-cache", "", "chdb extraction dir (default $CHDB_CACHE_DIR)")
-	pf.Float64Var(&g.ruBudget, "ru-budget", 0, "RU/s ceiling (default $RU_BUDGET_CLI or 450)")
+	pf.Float64Var(&g.ruBudget, "ru-budget", 0, "RU/s ceiling (default $RU_BUDGET_CLI or 750)")
 	pf.IntVar(&g.concurrency, "concurrency", 8, "concurrent store operations")
 	pf.BoolVarP(&g.verbose, "verbose", "v", false, "log each step")
 
 	cmd.AddCommand(newInitCmd(g), newLoadCmd(g), newGetCmd(g), newProbeCmd(g),
-		newRigCmd(g), newTrainDictCmd(g), newDocsCmd())
+		newPurgeCmd(g), newStatusCmd(g), newRigCmd(g), newTrainDictCmd(g), newDocsCmd())
 	return cmd
 }
 
@@ -127,6 +127,12 @@ func printf(format string, args ...any) { _, _ = fmt.Fprintf(out, format, args..
 
 // println writes a result line with a newline.
 func println(line string) { _, _ = fmt.Fprintln(out, line) }
+
+// warnf writes a warning to stderr rather than to out, so a result piped into another program
+// stays clean while a human still sees the problem. Like printf, the write error is dropped.
+func warnf(format string, args ...any) {
+	_, _ = fmt.Fprintf(os.Stderr, "linkouts: warning: "+format+"\n", args...)
+}
 
 // deferClose closes something whose Close can fail — the file store compacts and renames in
 // Close, so swallowing that error could hide lost documents — without masking the error the

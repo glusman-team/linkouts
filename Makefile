@@ -13,6 +13,11 @@ WEB  := web
 DOCS := docs
 BIN  := $(CLI)/bin/linkouts
 
+# The canonical KG name, in the infores form the wiki lists it as. A load key is $(KG)-$(VERSION);
+# the slug stored on each document ("k") and used in URLs and pool ids is the same name without
+# the infores: prefix. Changing the KG here is the only place its name is spelled out.
+KG ?= infores:drugapprovals-kp
+
 # Source for `make fixtures` / `make local-load` only: never committed, never read by CI.
 # Fixtures come from DAKP >= 1.0.0 only (1.11.2 and 1.16.0). The pre-1.0.0 samples
 # (e.g. Tablassert's agent_0.0.1.*) are deliberately NOT used.
@@ -130,16 +135,16 @@ contract: build ## Regenerate the committed contract fixtures and their golden c
 	mkdir -p $(CLI)/testdata/contract
 	rm -f $(CLI)/testdata/contract/docs.ndjson $(CLI)/testdata/contract/drift.ndjson \
 	  $(CLI)/testdata/contract/unresolvable.ndjson
-	$(BIN) load drug-approvals-kg-1.11.2 --nodes $(FIXTURE_NODES) \
+	$(BIN) load $(KG)-1.11.2 --nodes $(FIXTURE_NODES) \
 	  --edges $(CLI)/testdata/dakp/edges.ndjson --engine $(FIXTURE_ENGINE) \
 	  --store $(FIXTURE_STORE) --progress=false $(FIXTURE_REPRO)
-	$(BIN) load drug-approvals-kg-1.16.0 --nodes $(FIXTURE_NODES) \
+	$(BIN) load $(KG)-1.16.0 --nodes $(FIXTURE_NODES) \
 	  --edges $(CLI)/testdata/dakp/edges.v2.ndjson --engine $(FIXTURE_ENGINE) \
 	  --store $(FIXTURE_STORE) --progress=false $(FIXTURE_REPRO)
-	$(BIN) load drug-approvals-kg-1.16.0 --nodes $(FIXTURE_NODES) \
+	$(BIN) load $(KG)-1.16.0 --nodes $(FIXTURE_NODES) \
 	  --edges $(CLI)/testdata/dakp/edges.drift.ndjson --engine $(FIXTURE_ENGINE) \
 	  --store file:$(CLI)/testdata/contract/drift.ndjson --progress=false $(FIXTURE_REPRO)
-	$(BIN) load drug-approvals-kg-1.16.0 --nodes $(FIXTURE_NODES) \
+	$(BIN) load $(KG)-1.16.0 --nodes $(FIXTURE_NODES) \
 	  --edges $(CLI)/testdata/dakp/edges.unresolvable.ndjson --engine $(FIXTURE_ENGINE) \
 	  --store file:$(CLI)/testdata/contract/unresolvable.ndjson --progress=false $(FIXTURE_REPRO)
 	cp $(CLI)/testdata/contract/docs.ndjson $(CLI)/testdata/contract/docs.golden.ndjson
@@ -184,7 +189,7 @@ precommit: ## Run every prek hook over the whole tree
 # ---------------------------------------------------------------- local run (no cloud)
 
 LOCAL_DOCS ?= $(CURDIR)/tmp/edges.local.ndjson
-LOCAL_KEY  ?= drug-approvals-kg-$(DAKP_OLD)
+LOCAL_KEY  ?= $(KG)-$(DAKP_OLD)
 
 .PHONY: local-load local-web
 local-load: build ## Encode the DAKP sample to a local docs file (no Cosmos, no RU)

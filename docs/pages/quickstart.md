@@ -23,19 +23,23 @@ locally, CI is green.
 The CLI can store to a file instead of Cosmos, which is what the contract fixtures are made from:
 
 ```sh
-cli/bin/linkouts load drug-approvals-kg-1.11.2 \
+cli/bin/linkouts load infores:drugapprovals-kp-1.11.2 \
   --nodes cli/testdata/dakp/nodes.ndjson \
   --edges cli/testdata/dakp/edges.ndjson \
   --store file:/tmp/edges.ndjson
 
-cli/bin/linkouts load drug-approvals-kg-1.16.0 \
+cli/bin/linkouts load infores:drugapprovals-kp-1.16.0 \
   --nodes cli/testdata/dakp/nodes.ndjson \
   --edges cli/testdata/dakp/edges.v2.ndjson \
   --store file:/tmp/edges.ndjson
 ```
 
 The second load merges into the same documents. Each edge now holds both versions, the newer one
-stored as a delta against the older.
+stored as a delta against the older. Each load also writes that release's random pool and adds it
+to the pool index, which is what the root page lists itself from.
+
+`linkouts status --store file:/tmp/edges.ndjson` reports what the two loads stored: document
+count, graphs, releases, pool sizes.
 
 ## 3. Read one back
 
@@ -58,5 +62,8 @@ In dev, the app uses this file backend unless Cosmos credentials are present in 
 (or `COSMOS_BACKEND=http` forces Cosmos). With neither set it starts against an empty store, and
 every edge page is a 404.
 
-Then open `http://localhost:4000/edges/12ae7437-12dc-3c2a-b487-5297c09fc5e5`, or
-`http://localhost:4000/random`.
+Then open `http://localhost:4000/`, which lists the graphs in the store with a pill per release.
+Each pill is a random relationship from that release (`/drugapprovals-kp/random?version=1.16.0`),
+the graph's name is a random one from any of its releases (`/drugapprovals-kp/random`), and
+`/random` picks from the whole store. A direct link to one edge still works:
+`http://localhost:4000/edges/12ae7437-12dc-3c2a-b487-5297c09fc5e5`.

@@ -12,7 +12,8 @@ the evidence the knowledge source recorded, and how the edge changed between rel
   onto edges with embedded ClickHouse, drops null-like values, and stores one compressed, versioned
   document per edge in Azure Cosmos DB.
 - **The web app** (Phoenix LiveView, in `web/`) reads one document by edge id and renders it
-  through the KG's display config.
+  through the KG's display config. Its root page lists every graph in the store with a pill per
+  release, and each pill is a random relationship from that release.
 
 They share one contract: the stored document format in `docs/adr/0001-wire-format.md`, enforced
 by a test that has the Elixir reader re-encode the Go writer's output byte for byte.

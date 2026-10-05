@@ -8,8 +8,10 @@ changed across KG releases.
   joins node names and categories onto edges using an embedded ClickHouse engine (chDB),
   compresses each edge's versions into a single zstd blob, and writes them to Azure
   Cosmos DB through one rate-limited output.
-- **`web/`**: a minimal Phoenix LiveView app. It renders `/edges/:uuid`, has a
-  per-KG-version toggle and a diff view, and adds `/random`.
+- **`web/`**: a minimal Phoenix LiveView app. `/` lists every graph in the store with a pill
+  per release, `/edges/:uuid` renders one edge with a per-KG-version toggle and a diff view,
+  and `/random`, `/<kg>/random` and `/<kg>/random?version=<label>` pick a random relationship
+  from the whole store, one graph, or one release.
 - **`kgs/`**: declarative `.exs` display configs. Adding a KG means adding a data
   file, not writing code.
 - **`docs/`**: ExDoc guides plus the generated CLI reference.
@@ -31,12 +33,17 @@ make local-web      # Phoenix on http://localhost:4000 against that file
 ```sh
 linkouts init                                   # db + container + indexing policy (idempotent)
 linkouts probe --n 20                           # measure real RU per create/read/upsert
+linkouts status --check-pools                   # what is stored, and what it costs to read
 linkouts load --nodes kg_nodes_v1.2.3.ndjson --edges kg_edges_v1.2.3.ndjson
 ```
 
 The `--kg` and `--version` values are inferred from Tablassert filenames. To set the
-version key explicitly, pass `--key my-kg-1.2.3`. Writes are capped at `RU_BUDGET_CLI`
-(450 RU/s by default, 45% of the free tier). Full flag reference: `docs/cli/`.
+version key explicitly, pass the canonical infores form, `--key infores:my-kp-1.2.3`; the
+name without the prefix (`my-kp`) is the slug used in URLs and stored on documents.
+`linkouts purge --key my-kp-1.2.3` removes one release and `purge --all` wipes the store.
+Writes are capped at `RU_BUDGET_CLI` (750 RU/s by default, 75% of the free tier; the web
+app gets 15%, 10% stays headroom). Full flag
+reference: `docs/cli/`.
 
 ## Configuration
 
@@ -48,7 +55,8 @@ gitignored. See `.envrc.example` for every variable.
 | `COSMOS_PRIMARY_CONNECTION_STRING_RW` | CLI | `AccountEndpoint=…;AccountKey=…;` read-write |
 | `COSMOS_PRIMARY_CONNECTION_STRING_R` | web | read-only key |
 | `COSMOS_DB`, `COSMOS_CONTAINER` | both | default `edge_linkouts` / `edges` |
-| `RU_BUDGET_CLI`, `RU_BUDGET_WEB` | CLI / web | default 450 each |
+| `RU_BUDGET_CLI`, `RU_BUDGET_WEB` | CLI / web | default 750 / 150 (75% / 15% of the free tier) |
+| `DEDUPE_TTL_MS`, `POOL_TTL_MS` | web | edge / pool cache TTLs (default 30000 / 900000) |
 | `CHDB_CACHE_DIR` | CLI | where the embedded ClickHouse engine is extracted |
 | `SECRET_KEY_BASE` | web (prod) | `mix phx.gen.secret` |
 | `PHX_HOST` | web (prod) | `linkouts.skyelanegoetz.com` |

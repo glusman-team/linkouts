@@ -8,14 +8,14 @@ defmodule EdgeLinkouts.DisplayTest do
   """
   use ExUnit.Case, async: true
 
-  alias EdgeLinkouts.Codec
+  alias EdgeLinkouts.{Codec, Cosmos}
   alias EdgeLinkouts.Display
   alias EdgeLinkouts.Display.{Config, Segment, Value}
 
   @fixtures Path.expand("../fixtures/contract/docs.ndjson", __DIR__)
   @drift Path.expand("../fixtures/contract/drift.ndjson", __DIR__)
-  @v1 "drug-approvals-kg-1.11.2"
-  @v2 "drug-approvals-kg-1.16.0"
+  @v1 "infores:drugapprovals-kp-1.11.2"
+  @v2 "infores:drugapprovals-kp-1.16.0"
 
   setup_all do
     docs =
@@ -24,7 +24,9 @@ defmodule EdgeLinkouts.DisplayTest do
       |> Stream.map(&String.trim/1)
       |> Stream.reject(&(&1 == ""))
       |> Enum.map(&JSON.decode!/1)
-      |> Enum.reject(&(&1["id"] == "__random_pool__"))
+      # The fixture file also holds the reserved pool documents behind /random; they are not
+      # edge blobs and must not be decoded as ones.
+      |> Enum.reject(&Cosmos.reserved_id?(&1["id"]))
 
     resolved = resolve_all(@fixtures)
 
@@ -37,7 +39,7 @@ defmodule EdgeLinkouts.DisplayTest do
       end
 
     _ = legacy
-    {:ok, resolved: resolved, config: Display.get("drug-approvals-kg")}
+    {:ok, resolved: resolved, config: Display.get("infores:drugapprovals-kp")}
   end
 
   # Every stored document in an NDJSON fixture, resolved at every version it holds.
@@ -61,26 +63,51 @@ defmodule EdgeLinkouts.DisplayTest do
 
   describe "config loading" do
     test "the drug approvals KG has a config" do
-      config = Display.get("drug-approvals-kg")
+      config = Display.get("infores:drugapprovals-kp")
       assert config
-      assert config.display_name == "Multiomics Drug Approvals"
-      assert "drug-approvals-kg" in Display.known()
+      assert config.display_name == "Drug Approvals KP"
+      assert "infores:drugapprovals-kp" in Display.known()
     end
 
     test "name_of splits a version key at the first numeric segment" do
-      # Names contain hyphens, so splitting on the last one would give "drug-approvals-kg-1.16"
-      # and on the first would give "drug".
-      assert Display.name_of("drug-approvals-kg-1.16.0") == "drug-approvals-kg"
+      # Names contain hyphens, so splitting on the last one would give "infores:drugapprovals-kp-1.16"
+      # and on the first would give "infores:drugapprovals". The colon in a canonical name is
+      # just another character here: the split is at the hyphen before the numeric segment.
+      assert Display.name_of("infores:drugapprovals-kp-1.16.0") == "infores:drugapprovals-kp"
       assert Display.name_of("multiomics-kg-2.13.1") == "multiomics-kg"
       assert Display.name_of("no-version-here") == nil
-      assert Display.for_key("drug-approvals-kg-1.16.0").name == "drug-approvals-kg"
+      assert Display.for_key("infores:drugapprovals-kp-1.16.0").name == "infores:drugapprovals-kp"
+    end
+
+    test "a slug is the name without its infores prefix, and expands back to it" do
+      # The slug is what a document stores and what a URL carries; the canonical name is what
+      # the config table is keyed by. Both directions have to agree or a link on the bar points
+      # at a graph the display layer cannot find.
+      assert Display.slug("infores:drugapprovals-kp") == "drugapprovals-kp"
+      assert Display.slug("drugapprovals-kp") == "drugapprovals-kp"
+      assert Display.slug(nil) == nil
+
+      assert Display.kg_from_slug("drugapprovals-kp") == "infores:drugapprovals-kp"
+      # Accepting the full form too means a URL that carries it is not a 404.
+      assert Display.kg_from_slug("infores:drugapprovals-kp") == "infores:drugapprovals-kp"
+      assert Display.kg_from_slug(nil) == nil
+    end
+
+    test "a slug with no config expands to the infores form, and keeps a foreign scheme" do
+      # A stored graph with no display config still renders (the generic view), so its name has
+      # to be derivable from the slug alone.
+      assert Display.kg_from_slug("some-future-kp") == "infores:some-future-kp"
+      # A name that already carries a scheme is not infores-registered; prefixing it would
+      # invent an identifier.
+      assert Display.kg_from_slug("other:thing") == "other:thing"
+      assert Display.slug("other:thing") == "other:thing"
     end
 
     test "every referenced name is a slot or a real field" do
       # A typo'd slot renders as a silently shorter sentence, which is indistinguishable from
       # missing data. mix linkouts.check cross-checks against the fixtures; assert it here too so
       # `mix test` alone catches it.
-      config = Display.get("drug-approvals-kg")
+      config = Display.get("infores:drugapprovals-kp")
       assert Display.unresolved_names(config) -- observed_fields() == []
     end
   end
@@ -161,7 +188,7 @@ defmodule EdgeLinkouts.DisplayTest do
       # regulatory_approvals. So the alias is proven across two fixture files rather than two
       # versions of one edge — which is also how the drift actually reaches production: a new dump
       # arrives with the new spelling while stored documents keep the old one.
-      config = Display.get("drug-approvals-kg")
+      config = Display.get("infores:drugapprovals-kp")
 
       for {path, expected_key} <- [
             {@fixtures, "FDA_regulatory_approvals"},
@@ -170,19 +197,14 @@ defmodule EdgeLinkouts.DisplayTest do
         seen =
           for %{version: version, doc: doc} <- resolve_all(path),
               Map.has_key?(doc, expected_key) do
-            labels =
-              config |> Display.evidence(doc, version) |> Enum.map(&Segment.to_text(&1.label))
+            evidence = config |> Display.evidence(doc, version) |> Segment.flatten()
+            hrefs = for {:link, href, _label} <- evidence, do: href
 
-            assert "Relevant approvals" in labels,
-                   "#{Path.basename(path)} #{version} has #{expected_key} but rendered no approvals row"
+            assert Segment.to_text(evidence) =~ "covered by",
+                   "#{Path.basename(path)} #{version} has #{expected_key} but rendered no approvals sentence"
 
-            row =
-              config
-              |> Display.evidence(doc, version)
-              |> Enum.find(&(Segment.to_text(&1.label) == "Relevant approvals"))
-
-            assert row.value != [],
-                   "#{Path.basename(path)} #{version} rendered an empty approvals row"
+            assert Enum.any?(hrefs, &String.starts_with?(&1, "https://fda.report/applications/")),
+                   "#{Path.basename(path)} #{version} rendered no FDA application link"
 
             version
           end
@@ -191,12 +213,12 @@ defmodule EdgeLinkouts.DisplayTest do
       end
     end
 
-    test "a document with neither spelling renders no approvals row", %{
+    test "a document with neither spelling renders no approvals sentence", %{
       resolved: resolved,
       config: config
     } do
-      # The corollary: the alias must not make the row appear out of nothing, because an empty
-      # "Relevant approvals" line reads as a claim that there are none.
+      # The corollary: the alias must not make the sentence appear out of nothing, because
+      # "it is covered by" with nothing behind it reads as a claim that there is a label.
       edge =
         Enum.find(resolved, fn %{doc: doc} ->
           not Map.has_key?(doc, "FDA_regulatory_approvals") and
@@ -205,10 +227,8 @@ defmodule EdgeLinkouts.DisplayTest do
 
       assert edge, "expected a fixture edge with no approvals field at all"
 
-      labels =
-        config |> Display.evidence(edge.doc, edge.version) |> Enum.map(&Segment.to_text(&1.label))
-
-      refute "Relevant approvals" in labels
+      refute config |> Display.evidence(edge.doc, edge.version) |> Segment.to_text() =~
+               "covered by"
     end
 
     test "an unscoped alias applies at every version, canonical name first", %{config: config} do
@@ -261,7 +281,7 @@ defmodule EdgeLinkouts.DisplayTest do
   end
 
   describe "evidence" do
-    test "rows with no data are omitted rather than rendered empty", %{
+    test "sentences with no data are omitted rather than rendered empty", %{
       resolved: resolved,
       config: config
     } do
@@ -270,28 +290,60 @@ defmodule EdgeLinkouts.DisplayTest do
 
       assert edge, "expected a fixture edge without a FAERS case count"
 
-      labels =
-        config |> Display.evidence(edge.doc, edge.version) |> Enum.map(&Segment.to_text(&1.label))
+      text = config |> Display.evidence(edge.doc, edge.version) |> Segment.to_text()
 
-      refute "Number of FAERS cases reporting this usage" in labels
-      # The search row has no :if, so it is always present.
-      assert "Search product labels" in labels
+      # "holds  cases reporting this usage" with a hole in it would misstate the source.
+      refute text =~ "FAERS"
+      # The search sentence has no :if, so it is always present.
+      assert text =~ "On DailyMed, search"
+    end
+
+    test "the paragraph is prose: no storage key with underscores leaks into it", %{
+      resolved: resolved,
+      config: config
+    } do
+      # Values like agent_type are humanized into words before they reach the paragraph; a
+      # reader should never meet "manual_validation_of_automated_agent" in a sentence.
+      for %{version: version, doc: doc} <- resolved, version == @v1 do
+        refute config |> Display.evidence(doc, version) |> Segment.to_text() =~ "_"
+      end
     end
 
     test "DailyMed publications become product-label links", %{resolved: resolved, config: config} do
       edge = Enum.find(resolved, &(&1.version == @v1 and is_list(&1.doc["publications"])))
       assert edge
 
-      rows = Display.evidence(config, edge.doc, edge.version)
-      row = Enum.find(rows, &(Segment.to_text(&1.label) == "Relevant product labels"))
-      assert row
+      evidence = Display.evidence(config, edge.doc, edge.version) |> Segment.flatten()
+      assert Segment.to_text(evidence) =~ "documented on the product labels"
 
-      hrefs = for {:link, href, _label} <- row.value, do: href
+      links = for {:link, href, label} <- evidence, do: {label, href}
 
       for publication <- edge.doc["publications"] do
         "dailymed:" <> setid = publication
-        assert "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=#{setid}" in hrefs
+
+        # The exact set id, shown and linked, not a labelled "1" the reader must count.
+        assert {setid, "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=#{setid}"} in links
       end
+    end
+
+    test "an edge with no approvals or product labels says so instead of going quiet", %{
+      resolved: resolved,
+      config: config
+    } do
+      # The legacy page printed its product-labels line even when empty ("None."); a reader must
+      # never wonder whether facts were dropped by the renderer.
+      edge =
+        Enum.find(resolved, fn %{doc: doc} ->
+          not Map.has_key?(doc, "FDA_regulatory_approvals") and
+            not Map.has_key?(doc, "regulatory_approvals") and
+            not Map.has_key?(doc, "publications")
+        end)
+
+      assert edge, "expected a fixture edge with neither approvals nor product labels"
+
+      text = config |> Display.evidence(edge.doc, edge.version) |> Segment.to_text()
+      assert text =~ "No FDA application numbers are recorded for it."
+      assert text =~ "No product-label SPL set ids are recorded for it."
     end
 
     test "FDA application numbers link to the label browser", %{
@@ -306,21 +358,26 @@ defmodule EdgeLinkouts.DisplayTest do
 
       assert edge
 
-      rows = Display.evidence(config, edge.doc, edge.version)
-      row = Enum.find(rows, &(Segment.to_text(&1.label) == "Relevant approvals"))
-      assert row
+      evidence = Display.evidence(config, edge.doc, edge.version) |> Segment.flatten()
+      assert Segment.to_text(evidence) =~ "covered by"
 
-      hrefs = for {:link, href, _label} <- row.value, do: href
+      hrefs =
+        for {:link, href, _label} <- evidence,
+            String.starts_with?(href, "https://fda.report/applications/") do
+          href
+        end
+
       assert hrefs != []
-      assert Enum.all?(hrefs, &String.starts_with?(&1, "https://fda.report/applications/"))
     end
 
-    test "the source-record row lists knowledge sources", %{resolved: resolved, config: config} do
+    test "the knowledge sources render with their roles", %{resolved: resolved, config: config} do
       edge = Enum.find(resolved, &(&1.version == @v1))
-      rows = Display.evidence(config, edge.doc, edge.version)
-      row = Enum.find(rows, &(Segment.to_text(&1.label) == "Primary knowledge sources"))
-      assert row
-      assert Segment.to_text(row.value) =~ "infores:"
+
+      text = config |> Display.evidence(edge.doc, edge.version) |> Segment.to_text()
+
+      assert text =~ "It comes from infores:"
+      # Each source is named with its role, the way a curator cites provenance.
+      assert text =~ "primary knowledge source"
     end
 
     test "search links percent-encode the drug names they embed", %{
@@ -328,15 +385,18 @@ defmodule EdgeLinkouts.DisplayTest do
       config: config
     } do
       edge = Enum.find(resolved, &(&1.version == @v1))
-      rows = Display.evidence(config, edge.doc, edge.version)
-      row = Enum.find(rows, &(Segment.to_text(&1.label) == "Search product labels"))
+      evidence = Display.evidence(config, edge.doc, edge.version) |> Segment.flatten()
 
-      [_both | _] = links = for {:link, href, _} <- row.value, do: href
-      assert length(links) == 2
+      links =
+        for {:link, href, _} <- evidence,
+            href =~ "dailymed.nlm.nih.gov/dailymed/search.cfm" do
+          href
+        end
+
+      assert length(links) == 3
 
       # A name with a space or an ampersand must not break the query or add a parameter.
       for href <- links do
-        assert href =~ "dailymed.nlm.nih.gov/dailymed/search.cfm"
         refute href =~ " "
       end
     end
@@ -347,7 +407,7 @@ defmodule EdgeLinkouts.DisplayTest do
       # The legacy code gated this on `$version gt '1.0.0'`; the gate is kept because earlier
       # releases did not populate the qualifier and would render "in the context of" with nothing
       # after it.
-      config = Display.get("drug-approvals-kg")
+      config = Display.get("infores:drugapprovals-kp")
 
       doc = %{
         "subject" => "CHEBI:1",
@@ -359,8 +419,8 @@ defmodule EdgeLinkouts.DisplayTest do
         "disease_context_qualifier_name" => "adult fever"
       }
 
-      modern = config |> Display.edge(doc, "drug-approvals-kg-1.11.2") |> Segment.to_text()
-      old = config |> Display.edge(doc, "drug-approvals-kg-1.0.0") |> Segment.to_text()
+      modern = config |> Display.edge(doc, "infores:drugapprovals-kp-1.11.2") |> Segment.to_text()
+      old = config |> Display.edge(doc, "infores:drugapprovals-kp-1.0.0") |> Segment.to_text()
 
       assert modern =~ "in the context of adult fever"
       refute old =~ "in the context of"
@@ -368,7 +428,7 @@ defmodule EdgeLinkouts.DisplayTest do
     end
 
     test "object_modifier switches treating to preventing" do
-      config = Display.get("drug-approvals-kg")
+      config = Display.get("infores:drugapprovals-kp")
 
       base = %{
         "subject" => "CHEBI:1",

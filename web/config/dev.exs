@@ -18,6 +18,14 @@ config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,
   watchers: [
     esbuild: {Esbuild, :install_and_run, [:edge_linkouts, ~w(--sourcemap=inline --watch)]},
     tailwind: {Tailwind, :install_and_run, [:edge_linkouts, ~w(--watch)]}
+  ],
+  live_reload: [
+    patterns: [
+      ~r"priv/static/(?!uploads/).*(js|css|png|jpeg|jpg|gif|svg)$",
+      ~r"priv/gettext/.*",
+      ~r"lib/edge_linkouts_web/(?:live|controllers)/.*\.(ex|exs|heex)$",
+      ~r"lib/edge_linkouts_web/components/.*\.(ex|heex)$"
+    ]
   ]
 
 # ## SSL Support

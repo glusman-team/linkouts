@@ -45,16 +45,113 @@ const Theme = {
   },
 }
 
-// Copy affordance for static text, fired with JS.dispatch("edgelinkouts:copy",
-// to: "#element"). The event is dispatched on the target element, so its textContent
-// is what gets copied.
-window.addEventListener("edgelinkouts:copy", (event) => {
-  if ("clipboard" in navigator) {
-    navigator.clipboard.writeText(event.target.textContent)
+// Copy affordance for any [data-copy] button: the attribute is the exact text to copy
+// (an edge id, a CURIE), so what lands on the clipboard is never what the eye truncated.
+// The button says "Copied" for a moment, because a silent copy reads as a dead button.
+// Delegated on document so LiveView re-renders never detach it.
+document.addEventListener("click", (event) => {
+  const button = event.target.closest(".linkout-more-btn")
+  if (!button) return
+
+  // The rest is an inline <span hidden> next to the button: toggling `hidden` reveals the
+  // remaining list items in the middle of the sentence, with no reflow outside the line.
+  const rest = button.parentElement && button.parentElement.querySelector(".linkout-more-rest")
+  if (!rest) return
+
+  const willOpen = rest.hasAttribute("hidden")
+  if (willOpen) {
+    rest.removeAttribute("hidden")
+    button.setAttribute("aria-expanded", "true")
+    button.textContent = "Show less"
   } else {
-    console.warn("copy to clipboard is not supported in this browser")
+    rest.setAttribute("hidden", "")
+    button.setAttribute("aria-expanded", "false")
+    button.textContent = button.dataset.more
   }
 })
+
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-copy]")
+  if (!button || !("clipboard" in navigator)) return
+
+  navigator.clipboard.writeText(button.dataset.copy).then(() => {
+    const label = button.querySelector(".copy-text")
+    if (!label) return
+    const original = label.textContent
+    label.textContent = "Copied"
+    button.classList.add("is-copied")
+    setTimeout(() => {
+      label.textContent = original
+      button.classList.remove("is-copied")
+    }, 1200)
+  })
+})
+
+// Overflow for the KG bar's version pills (page_html/kg_bar.html.heex). The pills sit on one
+// measured line; whatever does not fit the window hides behind a "…" chip that expands the row
+// on click. Pixel measurement is the only client-side work this app does: the server renders
+// every pill, and it cannot know the reader's window width or font metrics.
+function fitVersionPills(row) {
+  const more = row.querySelector("[data-kg-more]")
+  // An expanded row stays expanded across resizes; collapsing what a reader asked to see would
+  // undo their click every time the window moves.
+  if (!more || row.classList.contains("is-expanded")) return
+
+  const pills = [...row.querySelectorAll(".version-pill")]
+  pills.forEach((pill) => pill.classList.remove("is-hidden"))
+  more.hidden = true
+  if (row.scrollWidth <= row.clientWidth) return
+
+  // The chip takes width too, so it goes on before the measuring rather than after.
+  more.hidden = false
+  let hidden = 0
+  // i > 0: the newest release always stays visible, so a very narrow window shows one pill and
+  // the chip rather than a chip on its own.
+  for (let i = pills.length - 1; i > 0 && row.scrollWidth > row.clientWidth; i--) {
+    pills[i].classList.add("is-hidden")
+    hidden += 1
+  }
+
+  more.hidden = hidden === 0
+  more.setAttribute("aria-expanded", "false")
+  more.setAttribute("aria-label", `Show all ${pills.length} releases (${hidden} hidden)`)
+}
+
+function fitAllVersionPills() {
+  document.querySelectorAll("[data-kg-pills]").forEach(fitVersionPills)
+}
+
+// Delegated on document, like the copy handler above, so it survives any re-render.
+document.addEventListener("click", (event) => {
+  const more = event.target.closest("[data-kg-more]")
+  if (!more) return
+
+  const row = more.closest("[data-kg-pills]")
+  if (!row) return
+
+  row.classList.add("is-expanded")
+  row
+    .querySelectorAll(".version-pill.is-hidden")
+    .forEach((pill) => pill.classList.remove("is-hidden"))
+  more.hidden = true
+  more.setAttribute("aria-expanded", "true")
+})
+
+// Re-measure on resize, at most once per frame: a drag fires dozens of events.
+let pillFrame = null
+window.addEventListener("resize", () => {
+  if (pillFrame) cancelAnimationFrame(pillFrame)
+  pillFrame = requestAnimationFrame(() => {
+    pillFrame = null
+    fitAllVersionPills()
+  })
+})
+
+// This file is a module, so the DOM is parsed by the time it runs and the bar (a static page,
+// no LiveView) can be measured immediately. Web fonts change the metrics, so measure again
+// once they land — measuring with fallback fonts can hide a pill that would have fit.
+fitAllVersionPills()
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitAllVersionPills)
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {

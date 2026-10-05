@@ -418,3 +418,240 @@ func TestFileStoreCompactsOnClose(t *testing.T) {
 		t.Errorf("Blob = %q, want the newest write", got.Blob)
 	}
 }
+
+// The KG slug is stored beside the blob, and like "d" it must be omitted when absent so an old
+// reader never sees an empty field it cannot interpret.
+func TestEncodeDocCarriesTheKGSlug(t *testing.T) {
+	got, err := encodeDoc(Doc{ID: "a", Blob: "b", KG: "drugapprovals-kp"})
+	if err != nil {
+		t.Fatalf("encodeDoc: %v", err)
+	}
+	if string(got) != `{"id":"a","b":"b","k":"drugapprovals-kp"}` {
+		t.Errorf("stored shape = %s", got)
+	}
+	both, err := encodeDoc(Doc{ID: "a", Blob: "b", DictID: 7, KG: "kg"})
+	if err != nil {
+		t.Fatalf("encodeDoc: %v", err)
+	}
+	if string(both) != `{"id":"a","b":"b","d":7,"k":"kg"}` {
+		t.Errorf("stored shape with a dict = %s", both)
+	}
+	back, err := decodeDoc(got)
+	if err != nil {
+		t.Fatalf("decodeDoc: %v", err)
+	}
+	if back.KG != "drugapprovals-kp" {
+		t.Errorf("decoded k = %q", back.KG)
+	}
+	// A document written before the field existed decodes with an empty slug rather than failing.
+	old, err := decodeDoc([]byte(`{"id":"a","b":"b"}`))
+	if err != nil || old.KG != "" {
+		t.Errorf("legacy document decoded to %+v, %v", old, err)
+	}
+}
+
+func TestFileStoreCarriesTheKGSlugAcrossReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "docs.ndjson")
+	ctx := context.Background()
+	store, err := OpenFile(path, nil)
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	if err := store.Create(ctx, Doc{ID: "id-1", Blob: "b", KG: "drugapprovals-kp"}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	closeStore(t, store)
+
+	reopened, err := OpenFile(path, nil)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer closeStore(t, reopened)
+	got, err := reopened.Read(ctx, "id-1")
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got.KG != "drugapprovals-kp" {
+		t.Errorf("k = %q after a close/reopen cycle, want it preserved by compaction", got.KG)
+	}
+}
+
+func TestPoolDocIDs(t *testing.T) {
+	id := PoolDocID("drugapprovals-kp", "1.16.0")
+	if id != "__random_pool__:drugapprovals-kp:1.16.0" {
+		t.Errorf("PoolDocID = %q", id)
+	}
+	slug, label, ok := SplitPoolDocID(id)
+	if !ok || slug != "drugapprovals-kp" || label != "1.16.0" {
+		t.Errorf("SplitPoolDocID(%q) = %q, %q, %v", id, slug, label, ok)
+	}
+	// A pre-release suffix is part of the label, not a separator.
+	if _, label, ok := SplitPoolDocID(PoolDocID("kg", "1.0.0-rc1")); !ok || label != "1.0.0-rc1" {
+		t.Errorf("pre-release label = %q, %v", label, ok)
+	}
+	for _, notAPool := range []string{
+		RandomPoolID, "", "575af3e8-8015-3718-be03-4da18a0bacfc",
+		"__random_pool__:kg", "__random_pool__::1.0.0", "__random_pool__:kg:",
+	} {
+		if _, _, ok := SplitPoolDocID(notAPool); ok {
+			t.Errorf("SplitPoolDocID(%q) accepted something that is not a pool document", notAPool)
+		}
+	}
+	// Reserved documents must never be mistaken for edges: purge skips them by this test, and a
+	// UUID can never start with the reserved prefix.
+	if !IsReservedID(RandomPoolID) || !IsReservedID(id) {
+		t.Error("IsReservedID missed a reserved document")
+	}
+	if IsReservedID("575af3e8-8015-3718-be03-4da18a0bacfc") {
+		t.Error("IsReservedID claimed an edge document")
+	}
+}
+
+func TestDeleteAllAndStats(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "docs.ndjson")
+
+	for name, open := range map[string]func() (Store, error){
+		"file": func() (Store, error) { return OpenFile(path, nil) },
+		"mem":  func() (Store, error) { return NewFake(nil), nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			store, err := open()
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			defer closeStore(t, store)
+			for _, id := range []string{"a", "b", "c"} {
+				if err := store.Create(ctx, Doc{ID: id, Blob: "x"}); err != nil {
+					t.Fatalf("Create %s: %v", id, err)
+				}
+			}
+			stats, err := store.Stats(ctx)
+			if err != nil {
+				t.Fatalf("Stats: %v", err)
+			}
+			if stats.Items != 3 {
+				t.Errorf("Stats.Items = %d, want 3", stats.Items)
+			}
+
+			// All streams every document exactly once, in id order where the backend can order.
+			var seen []string
+			if err := store.All(ctx, func(d Doc) error {
+				seen = append(seen, d.ID)
+				return nil
+			}); err != nil {
+				t.Fatalf("All: %v", err)
+			}
+			if strings.Join(seen, ",") != "a,b,c" {
+				t.Errorf("All visited %v, want a,b,c in order", seen)
+			}
+			// A callback error stops the scan rather than being swallowed.
+			sentinel := errors.New("stop")
+			if err := store.All(ctx, func(Doc) error { return sentinel }); !errors.Is(err, sentinel) {
+				t.Errorf("All returned %v, want the callback's error", err)
+			}
+
+			if err := store.Delete(ctx, "b"); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			if _, err := store.Read(ctx, "b"); !errors.Is(err, ErrNotFound) {
+				t.Errorf("Read after Delete = %v, want ErrNotFound", err)
+			}
+			if err := store.Delete(ctx, "b"); !errors.Is(err, ErrNotFound) {
+				t.Errorf("deleting twice = %v, want ErrNotFound so a re-run is safe", err)
+			}
+			// Reserved documents delete like any other: that is how purge drops a pool.
+			if err := store.Create(ctx, Doc{ID: RandomPoolID, Blob: "x"}); err != nil {
+				t.Fatalf("Create reserved: %v", err)
+			}
+			if err := store.Delete(ctx, PoolDocID("kg", "1.0.0")); !errors.Is(err, ErrNotFound) {
+				t.Errorf("deleting an absent pool = %v, want ErrNotFound", err)
+			}
+
+			if err := store.DropAll(ctx); err != nil {
+				t.Fatalf("DropAll: %v", err)
+			}
+			stats, err = store.Stats(ctx)
+			if err != nil {
+				t.Fatalf("Stats after DropAll: %v", err)
+			}
+			if stats.Items != 0 {
+				t.Errorf("Stats.Items after DropAll = %d, want 0", stats.Items)
+			}
+			// The store stays usable: a wipe is followed by a reload, not by a restart.
+			if err := store.Create(ctx, Doc{ID: "after", Blob: "x"}); err != nil {
+				t.Fatalf("Create after DropAll: %v", err)
+			}
+		})
+	}
+}
+
+// A file store's deletions only reach the file when it compacts on close, so a wipe has to be
+// visible to the next process — which is what a purge followed by a reload depends on.
+func TestFileStoreDropAllTruncatesTheFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "docs.ndjson")
+	ctx := context.Background()
+	store, err := OpenFile(path, nil)
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	for _, id := range []string{"a", "b"} {
+		if err := store.Create(ctx, Doc{ID: id, Blob: "x"}); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+	if err := store.DropAll(ctx); err != nil {
+		t.Fatalf("DropAll: %v", err)
+	}
+	closeStore(t, store)
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if len(strings.TrimSpace(string(raw))) != 0 {
+		t.Errorf("file still holds documents after a wipe:\n%s", raw)
+	}
+	reopened, err := OpenFile(path, nil)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer closeStore(t, reopened)
+	if reopened.Count() != 0 {
+		t.Errorf("reopened store holds %d documents, want 0", reopened.Count())
+	}
+	if err := reopened.Create(ctx, Doc{ID: "fresh", Blob: "x"}); err != nil {
+		t.Fatalf("Create into a wiped store: %v", err)
+	}
+}
+
+// Deleting from a file store must also drop the document from a later compaction, or a purge
+// would look like it worked and the documents would come back on the next close.
+func TestFileStoreDeleteSurvivesCompaction(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "docs.ndjson")
+	ctx := context.Background()
+	store, err := OpenFile(path, nil)
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	for _, id := range []string{"keep", "gone"} {
+		if err := store.Create(ctx, Doc{ID: id, Blob: "x"}); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+	if err := store.Delete(ctx, "gone"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	closeStore(t, store)
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if strings.Contains(string(raw), "gone") {
+		t.Errorf("compaction resurrected a deleted document:\n%s", raw)
+	}
+	if !strings.Contains(string(raw), "keep") {
+		t.Errorf("compaction dropped a document it should have kept:\n%s", raw)
+	}
+}

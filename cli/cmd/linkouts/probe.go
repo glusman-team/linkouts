@@ -11,6 +11,7 @@ import (
 
 	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
 	"github.com/glusman-team/edge-linkouts/cli/internal/cosmos"
+	"github.com/glusman-team/edge-linkouts/cli/internal/pipeline"
 	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
 )
 
@@ -27,12 +28,13 @@ func newProbeCmd(g *globals) *cobra.Command {
 		Long: `probe point-reads N edge documents and reports what they actually cost.
 
 The number that matters is RU per read, because the free tier is 1000 RU/s shared with the CLI
-and the web app is budgeted at 450. probe turns that budget from a guess into a measurement:
+and the web app is budgeted at 150. probe turns that budget from a guess into a measurement:
 it reports mean and worst-case charge, the decoded document sizes, and how many reads per
 second the budget allows.
 
-IDs come from the __random_pool__ document a load writes, so the sample spans the KG rather
-than being whatever happens to be first in the file.`,
+IDs come from the per-release random pools a load writes, reached through the pool index, so
+the sample spans every loaded release rather than being whatever happens to be first in the
+file.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) (err error) {
 			cfg, err := g.resolve()
@@ -83,7 +85,7 @@ than being whatever happens to be first in the file.`,
 				}
 				// Decoding is part of the read path the web app pays for in CPU, so probe
 				// measures it too: a blob that costs 1 RU but 200 ms to expand is still a problem.
-				stored, err := dictionaryFor(doc.DictID, dict)
+				stored, err := pipeline.DictionaryFor(doc.DictID, dict)
 				if err != nil {
 					return err
 				}
@@ -126,26 +128,36 @@ than being whatever happens to be first in the file.`,
 	return cmd
 }
 
-// probeIDs takes up to n ids from the random pool. A pool smaller than n is used as-is rather
-// than padded with repeats, because re-reading one document would flatter any cache and
-// understate the real cost.
+// probeIDs takes up to n ids from the random pools, spread across every release the index lists.
+// A pool smaller than n is used as-is rather than padded with repeats, because re-reading one
+// document would flatter any cache and understate the real cost.
+//
+// Reading the index first is not an extra hop for its own sake: it is how the web app finds a
+// release's pool, so probing the same path measures the same cost.
 func probeIDs(ctx context.Context, store cosmos.Store, dict []byte, count int) ([]string, error) {
-	doc, err := store.Read(ctx, cosmos.RandomPoolID)
+	index, err := pipeline.ReadPoolIndex(ctx, store, dict)
 	if err != nil {
 		if errors.Is(err, cosmos.ErrNotFound) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("read %s: %w", cosmos.RandomPoolID, err)
-	}
-	stored, err := dictionaryFor(doc.DictID, dict)
-	if err != nil {
 		return nil, err
 	}
-	var pool codec.Pool
-	if err := codec.DecodeJSON(doc.Blob, stored, &pool); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", cosmos.RandomPoolID, err)
+	var ids []string
+	for _, slug := range pipeline.Slugs(index) {
+		for _, rel := range pipeline.Releases(index, slug) {
+			pool, err := pipeline.ReadPool(ctx, store, dict, slug, rel.Label)
+			if err != nil {
+				// An index entry whose pool is missing is worth reporting but not worth failing
+				// a measurement over: the other releases still probe.
+				if errors.Is(err, cosmos.ErrNotFound) {
+					warnf("%v", err)
+					continue
+				}
+				return nil, err
+			}
+			ids = append(ids, pool.IDs...)
+		}
 	}
-	ids := pool.IDs
 	if len(ids) > count {
 		rand.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
 		ids = ids[:count]

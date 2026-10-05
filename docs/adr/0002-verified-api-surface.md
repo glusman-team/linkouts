@@ -124,6 +124,13 @@ sig = Base.encode64(:crypto.mac(:hmac, :sha256, key, payload))
 auth = URI.encode_www_form("type=master&ver=1.0&sig=#{sig}")   # escapes the WHOLE string
 ```
 
+`{doc_id}` in the signature is the **raw** id, never its percent-encoded form — the request path
+escapes the id, the payload does not. The two diverge on the reserved pool ids, whose colons the
+URL must escape: signing the escaped form 401s exactly those reads and nothing else, which is how
+it hid until the first live `/random` read a colon-bearing id (verified against the real account,
+2026-10). `EdgeLinkouts.Cosmos.HTTP.doc_links/2` returns both forms side by side so they cannot
+drift again.
+
 Headers: `authorization: <auth>`, `x-ms-date: <the same date, RFC 1123 UTC>`,
 `x-ms-version: 2020-11-05`, `x-ms-documentdb-partitionkey: ["<id>"]` (single-element JSON
 array; our partition key is `/id` so the value is the document id), `accept: application/json`.

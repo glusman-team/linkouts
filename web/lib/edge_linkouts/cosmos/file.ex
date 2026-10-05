@@ -5,7 +5,9 @@ defmodule EdgeLinkouts.Cosmos.File do
   One stored document per line (`{"id":...,"b":...,"d":...}`), last line for an id wins -
   the same append-then-compact shape the CLI produces, and the exact shape of the
   committed fixtures at `test/fixtures/contract/docs.ndjson`. The file is read once at
-  startup into a map; dev files are small, so no per-request re-read.
+  startup into a map; dev files are small, so no per-request re-read. Reserved documents
+  (the pool index, one release's pool) are lines like any other and are read by id, so
+  `/random` works against a dev file with no extra machinery.
 
   The path comes from `config :edge_linkouts, :cosmos_file` (set it from `COSMOS_DOCS` in
   runtime.exs). A nil path starts the backend empty; a configured path that does not exist
@@ -16,8 +18,6 @@ defmodule EdgeLinkouts.Cosmos.File do
 
   use GenServer
 
-  alias EdgeLinkouts.Cosmos
-
   def start_link(opts) do
     opts = Keyword.put_new(opts, :name, __MODULE__)
     GenServer.start_link(__MODULE__, opts, name: Keyword.fetch!(opts, :name))
@@ -25,9 +25,6 @@ defmodule EdgeLinkouts.Cosmos.File do
 
   @impl true
   def get_edge(id, server \\ __MODULE__), do: GenServer.call(server, {:get_edge, id})
-
-  @impl true
-  def random_pool(server \\ __MODULE__), do: GenServer.call(server, :random_pool)
 
   @impl true
   def init(opts) do
@@ -44,20 +41,9 @@ defmodule EdgeLinkouts.Cosmos.File do
     {:reply, fetch_edge(state.docs, id), state}
   end
 
-  def handle_call(:random_pool, _from, state) do
-    {:reply, fetch_pool(state.docs), state}
-  end
-
   defp fetch_edge(docs, id) do
     case Map.fetch(docs, id) do
       {:ok, doc} -> {:ok, doc}
-      :error -> {:error, :not_found}
-    end
-  end
-
-  defp fetch_pool(docs) do
-    case Map.fetch(docs, Cosmos.reserved_pool_id()) do
-      {:ok, doc} -> Cosmos.decode_pool_doc(doc)
       :error -> {:error, :not_found}
     end
   end

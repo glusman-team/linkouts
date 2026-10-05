@@ -23,9 +23,20 @@ end
 config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
-# Web app's slice of the free tier's 1000 RU/s (the CLI budgets the other half).
+# Web app's slice of the free tier's 1000 RU/s: 15% here, 75% for the CLI (it needs
+# bursts for ingestion), 10% left as headroom for the portal and retries.
 config :edge_linkouts,
-  ru_budget_web: String.to_integer(System.get_env("RU_BUDGET_WEB", "450"))
+  ru_budget_web: String.to_integer(System.get_env("RU_BUDGET_WEB", "150"))
+
+# Cache TTL classes, env-tunable. Set only when the variable is present so that
+# config/test.exs' dedupe_ttl_ms: 0 (caching off in tests) is not clobbered.
+if dedupe_ttl = System.get_env("DEDUPE_TTL_MS") do
+  config :edge_linkouts, dedupe_ttl_ms: String.to_integer(dedupe_ttl)
+end
+
+if pool_ttl = System.get_env("POOL_TTL_MS") do
+  config :edge_linkouts, pool_ttl_ms: String.to_integer(pool_ttl)
+end
 
 # Connection-string fallbacks below go through
 # EdgeLinkouts.Cosmos.HTTP.connection_string_key/2: each `;`-separated pair is split on
@@ -62,25 +73,36 @@ if config_env() == :dev do
         "AccountEndpoint"
       )
 
-  if System.get_env("COSMOS_BACKEND") == "http" or (dev_endpoint && dev_key) do
-    unless dev_endpoint && dev_key do
-      raise "COSMOS_BACKEND=http needs COSMOS_ENDPOINT and COSMOS_READ_ONLY_KEY (or COSMOS_PRIMARY_CONNECTION_STRING_R)"
-    end
-
-    config :edge_linkouts,
-      cosmos_backend: EdgeLinkouts.Cosmos.HTTP,
-      # A map, not a keyword list: EdgeLinkouts.Cosmos.HTTP reads it with map access, and a
-      # keyword list made the first request crash with BadMapError.
-      cosmos_http: %{
-        endpoint: dev_endpoint,
-        db: System.get_env("COSMOS_DB", "edge_linkouts"),
-        container: System.get_env("COSMOS_CONTAINER", "edges"),
-        key: dev_key
-      }
-  else
+  # An explicit COSMOS_BACKEND=file wins even when cloud credentials are in the environment:
+  # direnv exports them, and a local click-through must not quietly read the real account.
+  file_backend = fn ->
     config :edge_linkouts,
       cosmos_backend: EdgeLinkouts.Cosmos.File,
       cosmos_file: System.get_env("COSMOS_DOCS")
+  end
+
+  cond do
+    System.get_env("COSMOS_BACKEND") == "file" ->
+      file_backend.()
+
+    System.get_env("COSMOS_BACKEND") == "http" or (dev_endpoint && dev_key) ->
+      unless dev_endpoint && dev_key do
+        raise "COSMOS_BACKEND=http needs COSMOS_ENDPOINT and COSMOS_READ_ONLY_KEY (or COSMOS_PRIMARY_CONNECTION_STRING_R)"
+      end
+
+      config :edge_linkouts,
+        cosmos_backend: EdgeLinkouts.Cosmos.HTTP,
+        # A map, not a keyword list: EdgeLinkouts.Cosmos.HTTP reads it with map access, and a
+        # keyword list made the first request crash with BadMapError.
+        cosmos_http: %{
+          endpoint: dev_endpoint,
+          db: System.get_env("COSMOS_DB", "edge_linkouts"),
+          container: System.get_env("COSMOS_CONTAINER", "edges"),
+          key: dev_key
+        }
+
+    true ->
+      file_backend.()
   end
 end
 

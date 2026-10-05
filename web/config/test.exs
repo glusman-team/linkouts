@@ -27,7 +27,8 @@ config :phoenix,
 # instance is pointed at the committed contract fixtures so tests can exercise it too.
 config :edge_linkouts,
   # Tests reseed the shared Fake between cases, so a 30 s result cache on the shared Dedupe would
-  # serve one test's documents to the next. Tests of the cache start their own instance.
+  # serve one test's documents to the next: caching is off here (ttl 0). Tests of the cache
+  # start their own cache instance wired to their own Dedupe (see dedupe_test.exs).
   dedupe_ttl_ms: 0,
   cosmos_backend: EdgeLinkouts.Cosmos.Fake,
   start_cosmos_fake: true,

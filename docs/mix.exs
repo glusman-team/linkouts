@@ -68,6 +68,7 @@ defmodule EdgeLinkoutsDocs.MixProject do
           name in [
             "EdgeLinkouts.Codec",
             "EdgeLinkouts.RateLimiter",
+            "EdgeLinkouts.Cache",
             "EdgeLinkouts.Dedupe",
             "Mix.Tasks.Linkouts.Check"
           ]
@@ -75,7 +76,12 @@ defmodule EdgeLinkoutsDocs.MixProject do
       groups_for_modules: [
         "Display configs": [~r/EdgeLinkouts\.Display/],
         Storage: [EdgeLinkouts.Codec],
-        "Read path": [~r/EdgeLinkouts\.Cosmos/, EdgeLinkouts.RateLimiter, EdgeLinkouts.Dedupe],
+        "Read path": [
+          ~r/EdgeLinkouts\.Cosmos/,
+          EdgeLinkouts.RateLimiter,
+          EdgeLinkouts.Cache,
+          EdgeLinkouts.Dedupe
+        ],
         Tooling: [Mix.Tasks.Linkouts.Check]
       ],
       skip_undefined_reference_warnings_on: cli_pages

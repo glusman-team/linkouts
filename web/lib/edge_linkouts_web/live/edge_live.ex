@@ -1,6 +1,6 @@
 defmodule EdgeLinkoutsWeb.EdgeLive do
   @moduledoc """
-  The linkout page for one edge: the display-config sentence, the relationship diagram,
+  The linkout page for one edge: the display-config sentence and text relationship,
   the version switcher, the diff against the previous version, and the evidence panel.
 
   One Cosmos read per page view: `mount/3` reads nothing, and `handle_params/3` only calls
@@ -13,11 +13,14 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
   require Logger
 
   alias EdgeLinkouts.{Codec, Cosmos, Display}
+  alias EdgeLinkouts.Display.Config
   alias EdgeLinkoutsWeb.{Diff, EdgeComponents, Edges}
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, socket}
+    # The header's "Random edge" button is scoped to this edge's graph, which is not known
+    # until a document has been read; nil keeps it global for every state without one.
+    {:ok, assign(socket, kg_slug: nil)}
   end
 
   @impl true
@@ -89,10 +92,16 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
         assign(socket,
           view: :ok,
           versions: versions,
+          history: history(blob, versions),
           key: key,
+          version_label: version_label(key),
           doc: doc,
           kg_name: (config && config.display_name) || Codec.kg_name(key),
+          kg_slug: Display.slug(Codec.kg_name(key)),
           sentence: sentence(config, doc, key),
+          relationship: relationship(config, doc, key),
+          latest: latest?(config, key),
+          latest_label: config && config.latest_version,
           evidence: evidence(config, doc, key),
           diff: diff(blob, prev_key, doc),
           prev_key: prev_key,
@@ -110,6 +119,21 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
   defp sentence(nil, _doc, _key), do: nil
   defp sentence(config, doc, key), do: Display.edge(config, doc, key)
 
+  defp relationship(nil, _doc, _key), do: nil
+
+  defp relationship(config, doc, key) do
+    case Display.relationship(config, doc, key) do
+      [] -> nil
+      segments -> segments
+    end
+  end
+
+  # The version pill and the timeline tag a stored version as "latest" when its release
+  # number is the one the config was written against; an untagged config tags nothing.
+  defp latest?(%Config{latest_version: nil}, _key), do: false
+  defp latest?(%Config{latest_version: latest}, key), do: version_label(key) == latest
+  defp latest?(nil, _key), do: false
+
   defp evidence(nil, _doc, _key), do: []
   defp evidence(config, doc, key), do: Display.evidence(config, doc, key)
 
@@ -121,6 +145,44 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
     |> Enum.split_while(&(&1 != key))
     |> elem(0)
     |> List.last()
+  end
+
+  @doc false
+  # The timeline beside the diff: every stored version with the number of fields its release
+  # changed. Resolving each version is a local blob lookup, never a store read, so the whole
+  # history costs nothing extra and a reader can see at a glance which release moved.
+  def history(blob, versions) do
+    [nil | versions]
+    |> Enum.chunk_every(2, 1)
+    |> Enum.map(fn
+      # The final one-element chunk is the newest version, already covered as a `key`.
+      [_] ->
+        nil
+
+      [nil, key] ->
+        %{key: key, label: version_label(key), changes: nil}
+
+      [prev, key] ->
+        changes =
+          with {:ok, prev_doc} <- Codec.resolve(blob, prev),
+               {:ok, doc} <- Codec.resolve(blob, key) do
+            length(Diff.diff(prev_doc, doc))
+          else
+            _ -> nil
+          end
+
+        %{key: key, label: version_label(key), changes: changes}
+    end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  # "infores:drugapprovals-kp-1.16.0" carries the KG name on every pill, which is noise once
+  # the page already says which KG it is. The release number is the part a reader compares.
+  def version_label(key) do
+    case Display.name_of(key) do
+      nil -> key
+      name -> String.replace_prefix(key, name <> "-", "")
+    end
   end
 
   # nil means "the previous version could not be resolved", which the diff panel states

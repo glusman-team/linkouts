@@ -3,6 +3,7 @@ package cosmos
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
@@ -160,6 +161,71 @@ func (f *Fake) Replace(ctx context.Context, d Doc, etag string) error {
 func (f *Fake) Provision(context.Context) error { return f.record("provision") }
 func (f *Fake) Name() string                    { return "mem://fake" }
 func (f *Fake) Close() error                    { return nil }
+
+// Delete removes a document. A missing id is ErrNotFound, matching Cosmos, so a purge can tell
+// "already gone" from "deleted now".
+func (f *Fake) Delete(ctx context.Context, id string) error {
+	if err := f.record("delete"); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	_, exists := f.docs[id]
+	if !exists {
+		f.mu.Unlock()
+		return fmt.Errorf("%s: %w", id, ErrNotFound)
+	}
+	delete(f.docs, id)
+	f.mu.Unlock()
+	return f.budget.Take(ctx, f.chargeFor("delete"))
+}
+
+// All streams the stored documents in sorted id order, so a purge over a fake store is
+// deterministic and a test can assert exactly which documents were visited.
+func (f *Fake) All(ctx context.Context, fn func(Doc) error) error {
+	if err := f.record("all"); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	ids := make([]string, 0, len(f.docs))
+	for id := range f.docs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	docs := make([]Doc, 0, len(ids))
+	for _, id := range ids {
+		docs = append(docs, f.docs[id])
+	}
+	f.mu.Unlock()
+	for _, d := range docs {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if err := fn(d); err != nil {
+			return err
+		}
+	}
+	return f.budget.Take(ctx, f.chargeFor("all"))
+}
+
+// DropAll clears the store.
+func (f *Fake) DropAll(ctx context.Context) error {
+	if err := f.record("dropall"); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	f.docs = map[string]Doc{}
+	f.mu.Unlock()
+	return f.budget.Take(ctx, f.chargeFor("dropall"))
+}
+
+// Stats reports the document count, which the fake knows for free.
+func (f *Fake) Stats(context.Context) (StoreStats, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return StoreStats{Items: len(f.docs)}, nil
+}
 
 func (f *Fake) chargeFor(op string) float64 {
 	f.mu.Lock()

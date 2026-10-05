@@ -39,7 +39,7 @@ linkouts train-dict [flags]
       --container string    Cosmos container (default $COSMOS_CONTAINER or edges)
       --db string           Cosmos database (default $COSMOS_DB or edge_linkouts)
       --engine string       join engine: chdb (embedded ClickHouse) or fake (pure Go) (default "chdb")
-      --ru-budget float     RU/s ceiling (default $RU_BUDGET_CLI or 450)
+      --ru-budget float     RU/s ceiling (default $RU_BUDGET_CLI or 750)
       --store string        storage backend: cosmos, file:PATH, or mem:// (default "cosmos")
   -v, --verbose             log each step
 ```

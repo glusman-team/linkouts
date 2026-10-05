@@ -231,9 +231,11 @@ func Decompress(comp, dict []byte) ([]byte, error) {
 	return out, nil
 }
 
-// PoolSchema identifies the reserved __random_pool__ document, which holds reservoir-sampled
-// edge ids rather than a version map. Indexing is off on this container, so a random pick
-// would otherwise be a cross-partition scan.
+// PoolSchema identifies a random pool document, which holds reservoir-sampled edge ids for one
+// release of one knowledge graph rather than a version map. Indexing is off on this container, so
+// a random pick would otherwise be a full scan. One document per (kg, version), at
+// cosmos.PoolDocID; the ids are plain UUID strings, which measured smaller under zstd than any
+// packed encoding (see plans/kg-quickbar-scoped-random.md).
 const PoolSchema = "edgelinkouts.pool/1"
 
 // EncodeJSON is the generic form of Blob.Encode: base64(zstd(canonical JSON of v)). The pool
@@ -297,4 +299,141 @@ func (p Pool) MarshalJSON() ([]byte, error) {
 		"sampled_at": p.SampledAt,
 		"ids":        p.IDs,
 	})
+}
+
+// PoolIndexSchema identifies the reserved __random_pool__ document, which since per-release
+// pools holds no ids at all: it says which graphs and which releases have a pool, and how big
+// each one is.
+const PoolIndexSchema = "edgelinkouts.pool_index/1"
+
+// PoolIndex is the reserved index document every random route reads first.
+//
+// It is deliberately counts-only. The ids live one document per release (PoolDocID), so a random
+// edge in one release reads that release's sample and nothing else; Cosmos charges a point read
+// by item size, so an index that carried ids would make the cheapest random as expensive as the
+// priciest one and would grow with every release. Counts are what a weighted pick needs to stay
+// uniform across releases of different sizes, and they cost bytes, not kilobytes.
+type PoolIndex struct {
+	Schema string `json:"schema"`
+	// KGs maps a KG slug ("drugapprovals-kp") to that graph's releases.
+	KGs map[string]KGPool `json:"kgs"`
+}
+
+// KGPool is one knowledge graph's releases.
+type KGPool struct {
+	// Versions maps a version label ("1.16.0") to what the load measured for it.
+	Versions map[string]VersionPool `json:"versions"`
+}
+
+// VersionPool is one release's entry in the index.
+type VersionPool struct {
+	// Edges is how many distinct edges that release offered the sampler — its true size, which
+	// is what a weighted random pick uses so a 130k-edge release is not treated as equal to a
+	// 6-edge one.
+	Edges int64 `json:"edges"`
+	// Sampled is how many ids its pool document actually holds (min(Edges, --sample-size)).
+	Sampled int `json:"sampled"`
+	// SampledAt is when that pool was last written, RFC3339 UTC.
+	SampledAt string `json:"sampled_at"`
+}
+
+// MarshalJSON encodes the index as sorted maps at every depth, for the same reason as Blob:
+// sonic sorts map keys but emits struct fields in declaration order, and the Elixir reader
+// reproduces these bytes exactly.
+func (ix PoolIndex) MarshalJSON() ([]byte, error) {
+	kgs := make(Doc, len(ix.KGs))
+	for slug, kg := range ix.KGs {
+		kgs[slug] = kg
+	}
+	return canon.Marshal(Doc{"schema": ix.Schema, "kgs": kgs})
+}
+
+// MarshalJSON encodes one graph's releases as a sorted map.
+func (kg KGPool) MarshalJSON() ([]byte, error) {
+	versions := make(Doc, len(kg.Versions))
+	for label, vp := range kg.Versions {
+		versions[label] = vp
+	}
+	return canon.Marshal(Doc{"versions": versions})
+}
+
+// MarshalJSON encodes one release's counts as a sorted map.
+func (vp VersionPool) MarshalJSON() ([]byte, error) {
+	return canon.Marshal(Doc{
+		"edges":      vp.Edges,
+		"sampled":    vp.Sampled,
+		"sampled_at": vp.SampledAt,
+	})
+}
+
+// Set records one release, keeping the larger edge count when a key is loaded twice: a partial
+// re-run must not shrink a release's weight and so bias random away from it.
+func (ix *PoolIndex) Set(slug, label string, edges int64, sampled int, at string) {
+	if ix.KGs == nil {
+		ix.KGs = map[string]KGPool{}
+	}
+	kg := ix.KGs[slug]
+	if kg.Versions == nil {
+		kg.Versions = map[string]VersionPool{}
+	}
+	entry := VersionPool{Edges: edges, Sampled: sampled, SampledAt: at}
+	if prev, ok := kg.Versions[label]; ok && prev.Edges > entry.Edges {
+		entry.Edges = prev.Edges
+	}
+	kg.Versions[label] = entry
+	ix.KGs[slug] = kg
+}
+
+// Remove drops one release from the index, and the graph with it when that was its last release.
+// It reports whether anything was there to drop.
+func (ix *PoolIndex) Remove(slug, label string) bool {
+	kg, ok := ix.KGs[slug]
+	if !ok {
+		return false
+	}
+	if _, ok := kg.Versions[label]; !ok {
+		return false
+	}
+	delete(kg.Versions, label)
+	if len(kg.Versions) == 0 {
+		delete(ix.KGs, slug)
+	} else {
+		ix.KGs[slug] = kg
+	}
+	return true
+}
+
+// RemoveVersion drops one version from a blob so a bad release can be purged without losing the
+// others. Any version whose delta targeted the removed one is first materialized in full — a
+// delta whose base is gone can never resolve — and the blob is verified afterwards, so a failed
+// removal leaves the caller with an error rather than a document that will not decode.
+//
+// It reports whether the version was present.
+func (b *Blob) RemoveVersion(version string) (bool, error) {
+	if _, ok := b.Versions[version]; !ok {
+		return false, nil
+	}
+	// Materialize the dependents before deleting the base, while the base is still there to
+	// resolve against. The keys are collected first because the loop replaces entries.
+	dependents := make([]string, 0, len(b.Versions))
+	for key, entry := range b.Versions {
+		if key != version && !entry.IsFull() && entry.Base == version {
+			dependents = append(dependents, key)
+		}
+	}
+	sort.Strings(dependents)
+	for _, key := range dependents {
+		doc, err := b.Resolve(key)
+		if err != nil {
+			return false, fmt.Errorf("version %s depends on %s, which cannot be resolved: %w", key, version, err)
+		}
+		b.Versions[key] = Entry{Full: Clone(doc).(Doc)}
+	}
+	delete(b.Versions, version)
+	for _, key := range b.VersionKeys() {
+		if _, err := b.Resolve(key); err != nil {
+			return false, fmt.Errorf("removing version %s left %s unresolvable: %w", version, key, err)
+		}
+	}
+	return true, nil
 }

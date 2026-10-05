@@ -13,16 +13,19 @@ defmodule EdgeLinkouts.ContractTest do
   """
   use ExUnit.Case, async: true
 
-  alias EdgeLinkouts.Codec
+  alias EdgeLinkouts.{Codec, Cosmos}
 
   @fixtures Path.expand("fixtures/contract", __DIR__)
   @docs Path.join(@fixtures, "docs.ndjson")
   @drift Path.join(@fixtures, "drift.ndjson")
   @unresolvable Path.join(@fixtures, "unresolvable.ndjson")
 
-  @v1 "drug-approvals-kg-1.11.2"
-  @v2 "drug-approvals-kg-1.16.0"
-  @pool_id "__random_pool__"
+  # The canonical load keys, in the infores form the wiki lists the graph under, and the slug
+  # that is stored on documents and used in pool ids and URLs.
+  @slug "drugapprovals-kp"
+  @v1 "infores:drugapprovals-kp-1.11.2"
+  @v2 "infores:drugapprovals-kp-1.16.0"
+  @index_id "__random_pool__"
 
   setup_all do
     for path <- [@docs, @drift, @unresolvable] do
@@ -50,7 +53,11 @@ defmodule EdgeLinkouts.ContractTest do
     |> Enum.map(&JSON.decode!/1)
   end
 
-  defp edge_docs(docs), do: Enum.reject(docs, &(&1["id"] == @pool_id))
+  # A fixture file holds two kinds of document: edge blobs and the reserved pool documents
+  # behind /random. The same rule the CLI uses (`cosmos.IsReservedID`) splits them.
+  defp edge_docs(docs), do: Enum.reject(docs, &Cosmos.reserved_id?(&1["id"]))
+
+  defp reserved_doc(docs, id), do: Enum.find(docs, &(&1["id"] == id))
 
   defp frame_body(%{"b" => _b64, "d" => dict_id}) when not is_nil(dict_id) do
     # A dictionary-compressed fixture would need web/priv/zstd; the committed contract
@@ -67,32 +74,65 @@ defmodule EdgeLinkouts.ContractTest do
 
   describe "stored documents" do
     test "every fixture document is readable and carries an id and a frame", %{docs: docs} do
-      assert length(docs) == 7, "expected 6 edges plus the random pool, got #{length(docs)}"
+      assert length(docs) == 9,
+             "expected 6 edges plus one pool per release plus the index, got #{length(docs)}"
 
       for doc <- docs do
         assert is_binary(doc["id"]) and doc["id"] != ""
         assert is_binary(doc["b"]) and doc["b"] != ""
 
-        assert Map.keys(doc) -- ["id", "b", "d"] == [],
+        assert Map.keys(doc) -- ["id", "b", "d", "k"] == [],
                "unexpected stored fields: #{inspect(doc)}"
+      end
+
+      # `k` is on edge documents and on nothing else: a pool belongs to a release by its id,
+      # and repeating the slug inside it would be bytes that answer no question.
+      for doc <- edge_docs(docs) do
+        assert doc["k"] == @slug, "#{doc["id"]} carries k=#{inspect(doc["k"])}"
+      end
+
+      for doc <- docs, Cosmos.reserved_id?(doc["id"]) do
+        refute Map.has_key?(doc, "k"), "#{doc["id"]} should not carry a k field"
       end
     end
 
-    test "the pool document lists only ids that exist", %{docs: docs} do
-      pool_doc = Enum.find(docs, &(&1["id"] == @pool_id))
-      assert pool_doc, "no #{@pool_id} document, so /random has nothing to pick from"
+    test "the pool index lists every release with its true edge count", %{docs: docs} do
+      index_doc = reserved_doc(docs, @index_id)
+      assert index_doc, "no #{@index_id} document, so /random cannot find a release to pick from"
 
-      {:ok, pool} = Codec.decode_pool(pool_doc["b"])
-      assert is_list(pool.ids) and pool.ids != []
-      assert pool.key == @v2, "the pool should report the most recently loaded key"
+      {:ok, index} = Codec.decode_pool_index(index_doc["b"])
+      releases = index[@slug]
+      assert Map.keys(releases) |> Enum.sort() == ["1.11.2", "1.16.0"]
 
+      # The counts are what a weighted pick runs on, so they must be the real ones: an
+      # over-count would make /random favour a release it does not represent.
+      assert length(edge_docs(docs)) == 6
+      assert releases["1.11.2"].edges == 6
+      assert releases["1.16.0"].edges == 6
+      assert releases["1.16.0"].sampled == 6
+      # The fixture clock is pinned by `make contract`, so regeneration stays byte-stable.
+      assert releases["1.16.0"].sampled_at == "2026-01-01T00:00:00Z"
+    end
+
+    test "each release's pool lists only ids that exist", %{docs: docs} do
       edge_ids = docs |> edge_docs() |> Enum.map(& &1["id"]) |> MapSet.new()
 
-      for id <- pool.ids do
-        assert MapSet.member?(edge_ids, id), "pool references #{id}, which is not stored"
-      end
+      for {label, key} <- [{"1.11.2", @v1}, {"1.16.0", @v2}] do
+        id = Cosmos.pool_doc_id(@slug, label)
+        pool_doc = reserved_doc(docs, id)
+        assert pool_doc, "no #{id} document, so /#{@slug}/random?version=#{label} cannot work"
 
-      assert Enum.uniq(pool.ids) == pool.ids, "duplicate ids would bias /random"
+        {:ok, pool} = Codec.decode_pool(pool_doc["b"])
+        assert is_list(pool.ids) and pool.ids != []
+        assert pool.key == key, "the pool should report the key it was loaded under"
+
+        for edge_id <- pool.ids do
+          assert MapSet.member?(edge_ids, edge_id), "pool references #{edge_id}, not stored"
+        end
+
+        assert Enum.uniq(pool.ids) == pool.ids, "duplicate ids would bias /random"
+        assert Enum.sort(pool.ids) == pool.ids, "the CLI sorts a reservoir, so bytes are stable"
+      end
     end
 
     test "every edge decodes, resolves, and is null-free", %{docs: docs} do

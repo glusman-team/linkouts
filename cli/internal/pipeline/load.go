@@ -23,7 +23,13 @@ import (
 // Defaults for the knobs a caller usually leaves alone.
 const (
 	DefaultConcurrency = 8
-	DefaultSampleSize  = 4096
+	// DefaultSampleSize is the per-release /random reservoir cap. It was 4096 when one pool
+	// document served the whole container; now that each release has its own pool document, the
+	// cap is what a random read costs — Cosmos charges a point read by item size, and 1024 UUIDs
+	// measure ~27 KB stored. 1024 distinct edges per release is far more variety than a person
+	// clicking "random" can tell apart, and the web app caches the decoded pool, so the cold read
+	// happens once per node per cache window.
+	DefaultSampleSize = 1024
 	// queueDepth decouples the join from the store: the engine can run ahead while workers
 	// wait on network I/O, which is what keeps a 130k-edge load from serialising on latency.
 	queueDepth = 256
@@ -34,7 +40,7 @@ const (
 
 // Options configures one load.
 type Options struct {
-	// Key is the "<kg>-<version>" this run stores, e.g. drug-approvals-kg-1.11.2.
+	// Key is the "<kg>-<version>" this run stores, e.g. infores:drugapprovals-kp-1.11.2.
 	Key string
 	// BaseKey, when set, is the version new documents are diffed against. Empty means
 	// "the newest version already stored for this edge".
@@ -72,15 +78,28 @@ type Options struct {
 
 	// Threads caps ClickHouse parallelism for the join.
 	Threads int
+
+	// kg, versionLabel and slug are parsed out of Key by normalize: the canonical graph name
+	// ("infores:drugapprovals-kp"), the release label ("1.16.0"), and the name as stored on
+	// documents and used in URLs and pool document ids ("drugapprovals-kp").
+	kg           string
+	versionLabel string
+	slug         string
 }
 
 func (o *Options) normalize() error {
 	if o.Key == "" {
-		return errors.New("a version key is required (for example drug-approvals-kg-1.11.2)")
+		return errors.New("a version key is required (for example infores:drugapprovals-kp-1.11.2)")
 	}
-	if _, err := version.Parse(o.Key); err != nil {
+	parsed, err := version.Parse(o.Key)
+	if err != nil {
 		return fmt.Errorf("version key %q: %w", o.Key, err)
 	}
+	// One parse here rather than per edge: the slug goes on every document and the label into the
+	// pool index, and both must agree with what the web app derives from the same key.
+	o.kg = parsed.KG
+	o.versionLabel = parsed.Version()
+	o.slug = version.Slug(parsed.KG)
 	if o.Store == nil {
 		return errors.New("no store configured")
 	}
@@ -252,7 +271,7 @@ func Load(ctx context.Context, o Options) (*Stats, error) {
 		})
 	})
 
-	reporter := newReporter(o.Progress, st)
+	reporter := newReporter(o.Progress, st, func() float64 { return o.Budget.Consumed() })
 	for range o.Concurrency {
 		g.Go(func() error {
 			for {
@@ -329,7 +348,7 @@ func process(ctx context.Context, o *Options, st *Stats, r engine.Row) error {
 
 	// Create first: on a fresh load this is one request per edge instead of a read plus a
 	// write, and a 409 is the signal that this edge already has versions to merge into.
-	err = o.Store.Create(ctx, cosmos.Doc{ID: r.ID, Blob: encoded, DictID: o.dictID()})
+	err = o.Store.Create(ctx, cosmos.Doc{ID: r.ID, Blob: encoded, DictID: o.dictID(), KG: o.slug})
 	switch {
 	case err == nil:
 		st.bump(func() { st.Created++; st.Versions++ })
@@ -348,7 +367,7 @@ func merge(ctx context.Context, o *Options, st *Stats, id string, doc codec.Doc)
 		if err != nil {
 			return fmt.Errorf("read existing document: %w", err)
 		}
-		dict, err := dictionaryFor(existing.DictID, o.Dict)
+		dict, err := DictionaryFor(existing.DictID, o.Dict)
 		if err != nil {
 			return err
 		}
@@ -378,7 +397,14 @@ func merge(ctx context.Context, o *Options, st *Stats, id string, doc codec.Doc)
 			return fmt.Errorf("re-encode blob: %w", err)
 		}
 		versions := len(blob.Versions)
-		err = o.Store.Replace(ctx, cosmos.Doc{ID: id, Blob: encoded, DictID: o.dictID()}, existing.ETag)
+		// The stored slug is kept rather than overwritten: a blob can hold versions of two graphs
+		// when both assert the same edge UUID, and "the graph that created this document" is the
+		// more useful fact than "the graph that touched it last".
+		kg := existing.KG
+		if kg == "" {
+			kg = o.slug
+		}
+		err = o.Store.Replace(ctx, cosmos.Doc{ID: id, Blob: encoded, DictID: o.dictID(), KG: kg}, existing.ETag)
 		switch {
 		case err == nil:
 			st.bump(func() {
@@ -427,17 +453,6 @@ func chooseBase(blob *codec.Blob, o *Options) (string, codec.Doc, error) {
 	return key, doc, nil
 }
 
-// dictionaryFor returns the dictionary a stored frame needs. A mismatch is fatal rather than
-// silently producing garbage: zstd cannot decode a dict-compressed frame without its dict.
-func dictionaryFor(storedID uint32, current []byte) ([]byte, error) {
-	currentID := codec.DictID(current)
-	if storedID == currentID {
-		return current, nil
-	}
-	return nil, fmt.Errorf("document was compressed with dictionary %#x but this run has %#x; "+
-		"pass the matching --dict or repack with --no-repack=false", storedID, currentID)
-}
-
 func (o *Options) now() time.Time {
 	if o.Now != nil {
 		return o.Now()
@@ -445,8 +460,13 @@ func (o *Options) now() time.Time {
 	return time.Now()
 }
 
-// writePool stores the reservoir of edge ids that backs /random, merging with whatever an
-// earlier run left so the pool spans every KG rather than only the newest one.
+// writePool stores this release's reservoir of edge ids at its own reserved document, then
+// records the release in the pool index.
+//
+// One document per (kg, version) rather than one merged pool for everything: Cosmos charges a
+// point read by item size, so a single pool would make the cheapest random cost as much as the
+// priciest and would grow with every release loaded. Splitting also means a random in one release
+// never reads another release's ids, and reloading one release cannot disturb the others.
 func writePool(ctx context.Context, o *Options, st *Stats) error {
 	if st.sampler == nil || o.DryRun {
 		return nil
@@ -455,9 +475,13 @@ func writePool(ctx context.Context, o *Options, st *Stats) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	// Merge with the existing pool so /random stays unscoped across KGs and versions.
-	if existing, err := o.Store.Read(ctx, cosmos.RandomPoolID); err == nil {
-		dict, derr := dictionaryFor(existing.DictID, o.Dict)
+	sampledAt := o.now().UTC().Format(time.RFC3339)
+	poolID := cosmos.PoolDocID(o.slug, o.versionLabel)
+
+	// Merge with what an earlier load of this same key left, so re-running a release refills the
+	// sample instead of replacing it. Only this key's pool is read: other releases are untouched.
+	if existing, err := o.Store.Read(ctx, poolID); err == nil {
+		dict, derr := DictionaryFor(existing.DictID, o.Dict)
 		if derr == nil {
 			var old codec.Pool
 			if derr := codec.DecodeJSON(existing.Blob, dict, &old); derr == nil && old.Schema == codec.PoolSchema {
@@ -469,20 +493,57 @@ func writePool(ctx context.Context, o *Options, st *Stats) error {
 			}
 		}
 	}
+
 	pool := codec.Pool{
 		Schema:    codec.PoolSchema,
 		Key:       o.Key,
-		SampledAt: o.now().UTC().Format(time.RFC3339),
+		SampledAt: sampledAt,
 		IDs:       ids,
 	}
 	encoded, err := codec.EncodeJSON(pool, o.Dict, o.ZstdLevel)
 	if err != nil {
 		return fmt.Errorf("encode random pool: %w", err)
 	}
-	doc := cosmos.Doc{ID: cosmos.RandomPoolID, Blob: encoded, DictID: o.dictID()}
+	doc := cosmos.Doc{ID: poolID, Blob: encoded, DictID: o.dictID()}
 	if err := o.Store.Upsert(ctx, doc); err != nil {
-		return fmt.Errorf("store random pool: %w", err)
+		return fmt.Errorf("store random pool %s: %w", poolID, err)
 	}
 	st.bump(func() { st.Sampled = len(ids) })
+
+	return writePoolIndex(ctx, o, st, len(ids), sampledAt)
+}
+
+// writePoolIndex records this release in the reserved index document, preserving every other
+// graph and release already listed.
+//
+// The index carries counts only — the ids stay in the per-release pool documents — so it remains
+// well under a kilobyte however many graphs are loaded, and the one read every random route makes
+// first stays the cheapest read in the system. The weight it records is the release's true edge
+// count, which is what lets the app pick uniformly across releases of different sizes without
+// reading any of their ids.
+func writePoolIndex(ctx context.Context, o *Options, st *Stats, sampled int, sampledAt string) error {
+	index := codec.PoolIndex{Schema: codec.PoolIndexSchema, KGs: map[string]codec.KGPool{}}
+	// A leftover pool/1 document at this id — the pre-per-release format, which held a flat id
+	// list — decodes into an empty index and is replaced. That is the migration: the reload that
+	// writes this index is the same one that wipes the old documents.
+	if existing, err := o.Store.Read(ctx, cosmos.RandomPoolID); err == nil {
+		dict, derr := DictionaryFor(existing.DictID, o.Dict)
+		if derr == nil {
+			var old codec.PoolIndex
+			if derr := codec.DecodeJSON(existing.Blob, dict, &old); derr == nil && old.Schema == codec.PoolIndexSchema && old.KGs != nil {
+				index = old
+			}
+		}
+	}
+	index.Set(o.slug, o.versionLabel, st.sampler.offered(), sampled, sampledAt)
+
+	encoded, err := codec.EncodeJSON(index, o.Dict, o.ZstdLevel)
+	if err != nil {
+		return fmt.Errorf("encode pool index: %w", err)
+	}
+	doc := cosmos.Doc{ID: cosmos.RandomPoolID, Blob: encoded, DictID: o.dictID()}
+	if err := o.Store.Upsert(ctx, doc); err != nil {
+		return fmt.Errorf("store pool index: %w", err)
+	}
 	return nil
 }

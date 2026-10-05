@@ -13,6 +13,7 @@ defmodule EdgeLinkouts.Codec do
 
   @blob_schema "edgelinkouts.blob/1"
   @pool_schema "edgelinkouts.pool/1"
+  @pool_index_schema "edgelinkouts.pool_index/1"
 
   @target "$t"
   @set "$set"
@@ -29,6 +30,13 @@ defmodule EdgeLinkouts.Codec do
   @type t :: %__MODULE__{versions: %{version_key() => entry()}, order: [version_key()]}
 
   @type pool :: %{ids: [String.t()], key: String.t() | nil, sampled_at: String.t() | nil}
+
+  @type release :: %{
+          edges: non_neg_integer(),
+          sampled: non_neg_integer(),
+          sampled_at: String.t() | nil
+        }
+  @type pool_index :: %{String.t() => %{String.t() => release()}}
 
   # ---------------------------------------------------------------- decoding
 
@@ -57,7 +65,7 @@ defmodule EdgeLinkouts.Codec do
     end
   end
 
-  @doc "Decodes the reserved `__random_pool__` document that backs `/random`."
+  @doc "Decodes one release's random pool: the sampled edge ids behind `/<kg>/random`."
   @spec decode_pool(String.t(), binary() | nil) :: {:ok, pool()} | {:error, term()}
   def decode_pool(encoded, dictionary \\ nil) when is_binary(encoded) do
     with {:ok, frame} <- decode64(encoded),
@@ -74,6 +82,59 @@ defmodule EdgeLinkouts.Codec do
       other -> {:error, {:unexpected_payload, other}}
     end
   end
+
+  @doc """
+  Decodes the reserved pool index: which releases have a random pool, and how big each one is.
+
+  Returns `%{kg_slug => %{version_label => %{edges: n, sampled: n, sampled_at: iso}}}`. The index
+  carries counts and no ids, which is what keeps it under a kilobyte however many graphs are
+  loaded and lets a weighted pick stay uniform across releases without reading any of their ids.
+
+  A wrong schema is refused like every other document (ADR 0001). A right schema with a malformed
+  entry is not: one unusable release is skipped rather than failing the page that lists all of
+  them, because the index is metadata the CLI rewrites on every load.
+  """
+  @spec decode_pool_index(String.t(), binary() | nil) :: {:ok, pool_index()} | {:error, term()}
+  def decode_pool_index(encoded, dictionary \\ nil) when is_binary(encoded) do
+    with {:ok, frame} <- decode64(encoded),
+         {:ok, raw} <- decompress(frame, dictionary),
+         {:ok, %{"schema" => schema} = payload} <- decode_json(raw),
+         :ok <- check_schema(schema, @pool_index_schema) do
+      {:ok, parse_pool_index(Map.get(payload, "kgs"))}
+    else
+      {:ok, %{"schema" => other}} -> {:error, {:schema, other, @pool_index_schema}}
+      {:ok, payload} when is_map(payload) -> {:error, {:not_a_pool_index, Map.keys(payload)}}
+      {:error, reason} -> {:error, reason}
+      other -> {:error, {:unexpected_payload, other}}
+    end
+  end
+
+  defp parse_pool_index(kgs) when is_map(kgs) do
+    for {slug, %{"versions" => versions}} when is_binary(slug) and is_map(versions) <- kgs,
+        into: %{} do
+      {slug, parse_releases(versions)}
+    end
+  end
+
+  defp parse_pool_index(_other), do: %{}
+
+  defp parse_releases(versions) do
+    for {label, stats} when is_binary(label) and is_map(stats) <- versions,
+        into: %{} do
+      {label,
+       %{
+         edges: count(stats["edges"]),
+         sampled: count(stats["sampled"]),
+         sampled_at: nilify(stats["sampled_at"])
+       }}
+    end
+  end
+
+  defp count(n) when is_integer(n) and n >= 0, do: n
+  defp count(_other), do: 0
+
+  defp nilify(v) when is_binary(v), do: v
+  defp nilify(_other), do: nil
 
   defp decode64(encoded) do
     case Base.decode64(encoded) do
@@ -397,9 +458,9 @@ defmodule EdgeLinkouts.Codec do
   @doc """
   Compares two version strings numerically, component by component.
 
-  Accepts either bare versions (`"1.16.0"`) or full keys (`"drug-approvals-kg-1.16.0"`), so the
-  display layer can gate on `{:version, ">1.0.0"}` using the same ordering that picks the newest
-  stored version. Two orderings that disagree would make a config's gate mean something different
+  Accepts either bare versions (`"1.16.0"`) or full keys (`"infores:drugapprovals-kp-1.16.0"`),
+  so the display layer can gate on `{:version, ">1.0.0"}` using the same ordering that picks the
+  newest stored version. Two orderings that disagree would make a config's gate mean something different
   from the version list beside it.
 
   `1.9.0 < 1.16.0` (numeric, not lexicographic), and a final release sorts after its own

@@ -103,19 +103,15 @@ defmodule EdgeLinkouts.Display.Value do
     end
   end
 
-  def render({:list, name, inner, separator}, ctx) do
-    case fetch(ctx, name) do
-      values when is_list(values) and values != [] ->
-        values
-        |> Enum.map(&render_element(&1, inner, ctx))
-        |> Enum.reject(&(&1 == []))
-        |> interleave(Segment.text(separator))
-        |> Segment.join()
+  def render({:list, name, inner, separator}, ctx),
+    do: render_list(name, inner, separator, nil, ctx)
 
-      _ ->
-        []
-    end
-  end
+  # The 5-tuple caps the inline run: the first `max` rendered items stay in the sentence, the
+  # rest fold into one {:more} segment the page turns into a "show N more" disclosure. Twenty
+  # SPL set ids printed inline turn a paragraph into a wall of UUIDs; three read, the rest are
+  # one click away.
+  def render({:list, name, inner, separator, max}, ctx) when is_integer(max) and max > 0,
+    do: render_list(name, inner, separator, max, ctx)
 
   def render({:pick, name, branches}, ctx) do
     case fetch(ctx, name) do
@@ -140,6 +136,23 @@ defmodule EdgeLinkouts.Display.Value do
     case fetch(ctx, name) do
       nil -> []
       value -> [Segment.text(humanize(stringify(value)))]
+    end
+  end
+
+  # {:local, name}: the part of a CURIE after its prefix — "biolink:applied_to_treat" renders
+  # as "applied_to_treat". The biolink model's docs site names every term's page by this local
+  # id, so a sentence can link "its predicate is applied to treat" straight at the term's own
+  # page; a {:url} template needs the bare id, and a template string cannot strip a prefix.
+  def render({:local, name}, ctx) do
+    case fetch(ctx, name) do
+      nil ->
+        []
+
+      value ->
+        case stringify(value) do
+          nil -> []
+          curie -> [Segment.text(curie |> String.split(":", parts: 2) |> List.last())]
+        end
     end
   end
 
@@ -168,12 +181,17 @@ defmodule EdgeLinkouts.Display.Value do
   # Field values are percent-encoded, so a drug name with a space or an ampersand cannot break the
   # query or smuggle a parameter.
   def render({:url, template, label}, ctx) when is_binary(template) do
+    # Slots resolve first, then fields, exactly like a string template: a URL may need a
+    # transformed value (a CURIE's local id) just as much as a sentence does.
     url =
       Regex.replace(~r/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/, template, fn _full, name ->
-        case fetch(ctx, name) do
-          nil -> ""
-          value -> URI.encode_www_form(stringify(value) || "")
-        end
+        value =
+          case Map.fetch(ctx.slots, name) do
+            {:ok, spec} -> spec |> render(ctx) |> Segment.to_text()
+            :error -> fetch(ctx, name) |> stringify()
+          end
+
+        URI.encode_www_form(value || "")
       end)
 
     text = label |> render(ctx) |> Segment.to_text()
@@ -198,9 +216,42 @@ defmodule EdgeLinkouts.Display.Value do
     unsupported value spec: #{inspect(other)}
 
     Valid forms are a template string, {:field, name}, {:link, label_field, curie_field},
-    {:list, name, inner, separator}, {:pick, name, branches} and {:if, conditions, then, else}.
+    {:list, name, inner, separator} or {:list, name, inner, separator, max}, {:pick, name,
+    branches}, {:local, name} and {:if, conditions, then, else}.
     `mix linkouts.check` reports this at build time rather than on a page view.
     """
+  end
+
+  defp render_list(name, inner, separator, max, ctx) do
+    case fetch(ctx, name) do
+      values when is_list(values) and values != [] ->
+        rendered =
+          values
+          |> Enum.map(&render_element(&1, inner, ctx))
+          |> Enum.reject(&(&1 == []))
+
+        {shown, hidden} =
+          if max && length(rendered) > max, do: Enum.split(rendered, max), else: {rendered, []}
+
+        shown
+        |> interleave(Segment.text(separator))
+        |> Kernel.++(more_segment(hidden, separator))
+        |> Segment.join()
+
+      _ ->
+        []
+    end
+  end
+
+  # The fold carries the leading separator so a flattened read (plain text, link extraction)
+  # restores the exact sequence the open disclosure shows.
+  defp more_segment([], _separator), do: []
+
+  defp more_segment(hidden, separator) do
+    [
+      {:more,
+       List.flatten([Segment.text(separator) | interleave(hidden, Segment.text(separator))])}
+    ]
   end
 
   # A list element becomes the document for the inner spec: a map element (a KGX `sources` entry)

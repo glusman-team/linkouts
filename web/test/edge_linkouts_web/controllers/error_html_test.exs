@@ -9,7 +9,7 @@ defmodule EdgeLinkoutsWeb.ErrorHTMLTest do
 
     assert content =~ "Page not found"
     assert content =~ "edge id was not found"
-    assert content =~ ~s(href="/")
+    assert content =~ ~s(href="/random")
   end
 
   test "renders 500.html" do

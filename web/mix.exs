@@ -49,6 +49,13 @@ defmodule EdgeLinkouts.MixProject do
       {:finch, "~> 0.24"},
       # Validates kgs/*.exs against the display-config schema.
       {:nimble_options, "~> 1.1"},
+      # Cache layer for Cosmos reads: TTL classes, generational eviction, entry/byte bounds.
+      # Nebulex 3 keeps the adapters in separate packages, so the local (generational ETS)
+      # adapter is its own dep. Both pure Elixir, no NIF; their only hard dep is the
+      # nimble_options above. Deliberately not added: :decorator (no declarative caching),
+      # :shards (default :ets backend is enough), :ex2ms (no query macros).
+      {:nebulex, "~> 3.0"},
+      {:nebulex_local, "~> 3.0"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.5", runtime: Mix.env() == :dev},
       {:heroicons,

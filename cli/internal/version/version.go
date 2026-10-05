@@ -10,7 +10,18 @@ import (
 	"strings"
 )
 
-// Key is a parsed "<kg>-<version>" identifier, e.g. drug-approvals-kg-1.11.2.
+// InforesPrefix is the registry prefix a Translator KG name carries: the drug approvals graph is
+// "infores:drugapprovals-kp". Documents and URLs carry the name without it — the slug — because
+// the prefix is eight identical bytes on every document and every reader can put it back. The
+// canonical name (with the prefix) stays the one used in version keys and display configs, so
+// nothing about key parsing changes.
+const InforesPrefix = "infores:"
+
+// Slug is the KG name as it is stored on documents and as it appears in URLs: the canonical name
+// with the infores registry prefix dropped. A name that has no prefix is its own slug.
+func Slug(kg string) string { return strings.TrimPrefix(kg, InforesPrefix) }
+
+// Key is a parsed "<kg>-<version>" identifier, e.g. infores:drugapprovals-kp-1.11.2.
 type Key struct {
 	Raw string
 	KG  string
@@ -22,7 +33,7 @@ type Key struct {
 }
 
 // Parse splits a key at the last hyphen that begins a numeric segment. KG names contain
-// hyphens ("drug-approvals-kg"), versions start with a digit, so that boundary is
+// hyphens ("drugapprovals-kp"), versions start with a digit, so that boundary is
 // unambiguous — and splitting on the last hyphen alone would break on "1.0.0-rc1".
 func Parse(key string) (Key, error) {
 	if key == "" {
@@ -75,6 +86,10 @@ func parseVersion(v string) ([]int, string) {
 
 // String returns the original key.
 func (k Key) String() string { return k.Raw }
+
+// Slug is the KG part of this key without the infores prefix, which is what gets stored on the
+// document and used to build the reserved pool document id.
+func (k Key) Slug() string { return Slug(k.KG) }
 
 // Version renders the version part alone ("1.11.2"), which is what the UI shows.
 func (k Key) Version() string {
@@ -140,6 +155,18 @@ func CompareKeys(a, b string) int {
 	}
 	return Compare(pa, pb)
 }
+
+// CompareLabels orders two bare version labels ("1.16.0"), which is what the pool index stores
+// per release. Text order would put 1.9.0 after 1.11.2, so the labels are compared as the version
+// part of a key: a throwaway KG name in front of each makes Parse find the numeric segments, and
+// Compare then does the numeric-then-suffix ordering both callers expect.
+func CompareLabels(a, b string) int {
+	return CompareKeys(labelPrefix+a, labelPrefix+b)
+}
+
+// labelPrefix is a KG name that Parse cannot mistake for part of a version: it ends in a hyphen
+// that is not followed by a digit, so the split still lands on the label's own first segment.
+const labelPrefix = "kg-"
 
 // SortKeys orders keys oldest first.
 func SortKeys(keys []string) []string {

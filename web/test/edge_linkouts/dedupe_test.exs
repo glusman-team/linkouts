@@ -1,7 +1,7 @@
 defmodule EdgeLinkouts.DedupeTest do
   use ExUnit.Case, async: true
 
-  alias EdgeLinkouts.{Cosmos, Dedupe}
+  alias EdgeLinkouts.{Cache, Cosmos, Dedupe}
 
   setup do
     fake = :"fake_#{System.unique_integer()}"
@@ -143,22 +143,41 @@ defmodule EdgeLinkouts.DedupeTest do
       :ok
     end
 
-    defp read(dedupe, fake, id),
-      do: Dedupe.execute(id, fn -> Cosmos.Fake.get_edge(id, fake) end, dedupe)
+    # Cache tests run against a Dedupe instance wired to its own cache: the app-wide cache is
+    # shared by every async test, and storing into it would leak documents between cases.
+    # gc_interval is pushed far past any test so no generation swap can evict behind a test's
+    # back; expiry is read-based and deterministic.
+    defp start_cached_dedupe(opts \\ []) do
+      n = System.unique_integer([:positive])
+      cache = :"cache_#{n}"
+      name = :"dedupe_#{n}"
+      start_supervised!({Cache, name: cache, gc_interval: :timer.hours(1)})
+
+      opts =
+        opts
+        |> Keyword.put(:name, name)
+        |> Keyword.put(:cache, cache)
+        |> Keyword.put_new(:ttl_ms, 30_000)
+
+      start_supervised!({Dedupe, opts})
+      name
+    end
+
+    defp read(dedupe, fake, id, opts \\ []),
+      do: Dedupe.execute(id, fn -> Cosmos.Fake.get_edge(id, fake) end, dedupe, opts)
 
     test "the LiveView double mount costs one backend read, not two", %{fake: fake} do
       # Static render, then the connected mount a moment later: sequential, so coalescing alone
       # cannot merge them.
-      dedupe = start_dedupe(ttl_ms: 30_000)
+      dedupe = start_cached_dedupe()
 
       assert {:ok, _} = read(dedupe, fake, "e1")
       assert {:ok, _} = read(dedupe, fake, "e1")
-
       assert Cosmos.Fake.calls(fake) == [{:get_edge, "e1"}]
     end
 
     test "a failure is not remembered, so the next view retries", %{fake: fake} do
-      dedupe = start_dedupe(ttl_ms: 30_000)
+      dedupe = start_cached_dedupe()
 
       assert {:error, :not_found} = read(dedupe, fake, "missing")
       assert {:error, :not_found} = read(dedupe, fake, "missing")
@@ -170,7 +189,7 @@ defmodule EdgeLinkouts.DedupeTest do
     end
 
     test "results expire after the ttl", %{fake: fake} do
-      dedupe = start_dedupe(ttl_ms: 20)
+      dedupe = start_cached_dedupe(ttl_ms: 20)
 
       assert {:ok, _} = read(dedupe, fake, "e1")
       Process.sleep(40)
@@ -179,25 +198,23 @@ defmodule EdgeLinkouts.DedupeTest do
       assert length(Cosmos.Fake.calls(fake)) == 2
     end
 
-    test "a full table stops remembering instead of evicting", %{fake: fake} do
-      Cosmos.Fake.seed(%{"id" => "e2", "b" => "y"}, fake)
-      dedupe = start_dedupe(ttl_ms: 30_000, max_entries: 1)
-
-      assert {:ok, _} = read(dedupe, fake, "e1")
-      assert {:ok, _} = read(dedupe, fake, "e2")
-      # e1 kept its slot; e2 found the table full and was not stored.
-      assert {:ok, _} = read(dedupe, fake, "e1")
-      assert {:ok, _} = read(dedupe, fake, "e2")
-
-      assert Cosmos.Fake.calls(fake) == [{:get_edge, "e1"}, {:get_edge, "e2"}, {:get_edge, "e2"}]
-    end
-
     test "clear/1 forgets everything", %{fake: fake} do
-      dedupe = start_dedupe(ttl_ms: 30_000)
+      dedupe = start_cached_dedupe()
 
       assert {:ok, _} = read(dedupe, fake, "e1")
       :ok = Dedupe.clear(dedupe)
       assert {:ok, _} = read(dedupe, fake, "e1")
+
+      assert length(Cosmos.Fake.calls(fake)) == 2
+    end
+
+    test "a caller's ttl override cannot revive caching the server disabled", %{fake: fake} do
+      # The app cache in this env runs with ttl 0 (config/test.exs): tests reseed the shared
+      # Fake between cases, so nothing may be replayed. An override must not switch that back on.
+      dedupe = start_dedupe()
+
+      assert {:ok, _} = read(dedupe, fake, "e1", ttl_ms: 30_000)
+      assert {:ok, _} = read(dedupe, fake, "e1", ttl_ms: 30_000)
 
       assert length(Cosmos.Fake.calls(fake)) == 2
     end

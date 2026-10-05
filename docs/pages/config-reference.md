@@ -5,15 +5,17 @@ A config is a map with these keys:
 | key | required | what it is |
 |---|---|---|
 | `name` | yes | the `<name>` of the version keys this config renders |
-| `display_name` | yes | the human name, shown in the header and on the home page |
+| `display_name` | yes | the human name, shown in the edge page header |
 | `url` | | the knowledge source's own documentation |
-| `description` | | prose about the KG, for the home page |
+| `description` | | prose about the KG, shown in the edge page's about section |
 | `feedback_repo` | | GitHub repo whose issues take corrections for this KG |
 | `aliases` | | alternative field spellings, see [Adding a KG](add-a-kg.md) |
 | `slots` | | named value specs a template can reference as `{name}` |
-| `title` | | short label for the page title; defaults to subject — object |
+| `title` | | short label for the page title; defaults to "subject and object" |
 | `edge` | yes | the sentence describing the relationship |
-| `evidence` | | rows for the evidence panel: `%{label: spec, value: spec, if: [conditions]}` |
+| `relationship` | | the text relationship line, identifiers and exact biolink terms inline; replaces the diagram when present |
+| `latest_version` | | release number this config was written against ("1.16.0"); the page tags it "latest" |
+| `evidence` | | sentences for the evidence paragraph: `%{value: spec, if: [conditions]}`. Every sentence that passes its conditions renders into one prose paragraph on the edge page |
 
 ## Value specs
 
@@ -61,12 +63,19 @@ Renders `then` when every condition holds, otherwise `else` (or nothing).
 
 ### `{:url, template, label}`
 
-A link whose URL is built from fields. Each `{field}` in the template is percent-encoded, so a
-value containing a space or an `&` cannot break the query string or add a parameter.
+A link whose URL is built from the template. Each `{name}` resolves as a slot first, then a
+field, and is percent-encoded, so a value containing a space or an `&` cannot break the query
+string or add a parameter.
 
 ```elixir
 {:url, "https://dailymed.nlm.nih.gov/dailymed/search.cfm?query={subject_name}", "labels for {subject_name}"}
 ```
+
+### `{:local, name}`
+
+The part of a CURIE after its prefix: `biolink:applied_to_treat` renders as `applied_to_treat`.
+The biolink model's docs name every term's page by this local id, so a slot pair can turn a
+stored predicate into a link at the term's own documentation page.
 
 ### `{:number, name, :sig2 | :int}`
 

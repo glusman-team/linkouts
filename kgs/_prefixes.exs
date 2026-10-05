@@ -17,9 +17,15 @@
     "HMDB" => "https://hmdb.ca/metabolites/$value",
     "HP" => "https://hpo.jax.org/app/browse/term/$curie",
     "LOINC" => "https://loinc.org/$value",
+    "MESH" => "https://id.nlm.nih.gov/mesh/$value",
     "MONDO" => "https://monarchinitiative.org/$curie",
+    "UMLS" => "https://identifiers.org/$curie",
     "NCBITAXON" => "https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=$value",
+    # FDA application numbers reach the label browser by number; the legacy page linked
+    # NDA/ANDA/BLA spellings to the same browser, and ANDA- or BLA-only edges keep that.
     "NDA" => "https://fda.report/applications/$value",
+    "ANDA" => "https://fda.report/applications/$value",
+    "BLA" => "https://fda.report/applications/$value",
     "PR" => "https://proconsortium.org/cgi-bin/entry_pro?id=PR_$value",
     "PUBCHEM.COMPOUND" => "https://pubchem.ncbi.nlm.nih.gov/compound/$value",
     "RHEA" => "https://www.rhea-db.org/rhea/$value",
@@ -32,7 +38,7 @@
     "DOI" => "https://doi.org/$value",
     # DailyMed SPL ids arrive as "dailymed:<uuid>" in the drug approvals KG.
     "DAILYMED" => "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=$value",
-    # FDA application numbers reach the label browser by NDA/ANDA/BLA number.
+    # The FDA's own daf browser, for CURIEs that name it explicitly.
     "FDA.APPLICATION" =>
       "https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=overview.process&ApplNo=$value"
   },

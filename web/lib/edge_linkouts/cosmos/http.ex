@@ -16,7 +16,6 @@ defmodule EdgeLinkouts.Cosmos.HTTP do
 
   @behaviour EdgeLinkouts.Cosmos
 
-  alias EdgeLinkouts.Cosmos
   alias EdgeLinkouts.RateLimiter
 
   @x_ms_version "2020-11-05"
@@ -27,13 +26,6 @@ defmodule EdgeLinkouts.Cosmos.HTTP do
   @impl true
   def get_edge(id) do
     point_read(id)
-  end
-
-  @impl true
-  def random_pool do
-    with {:ok, doc} <- point_read(Cosmos.reserved_pool_id()) do
-      Cosmos.decode_pool_doc(doc)
-    end
   end
 
   defp point_read(id) do
@@ -56,11 +48,15 @@ defmodule EdgeLinkouts.Cosmos.HTTP do
 
   defp do_request(id) do
     cfg = Application.fetch_env!(:edge_linkouts, :cosmos_http)
-    link = doc_link(cfg, id)
+    # The URL carries the percent-encoded id, the signature does not: Cosmos signs the resource
+    # link exactly as the service sees it — the raw id — and decodes the request path first. A
+    # reserved pool id contains colons, and signing the encoded form made every such read 401
+    # while UUID ids kept working, which is how this hid until /random hit the live account.
+    {link, signed_link} = doc_links(cfg, id)
     date = format_date(DateTime.utc_now())
 
     headers = [
-      {"authorization", authorization("get", "docs", link, date, cfg.key)},
+      {"authorization", authorization("get", "docs", signed_link, date, cfg.key)},
       {"x-ms-date", date},
       {"x-ms-version", @x_ms_version},
       # Partition key is /id, so the partition key value is the document id itself.
@@ -79,8 +75,26 @@ defmodule EdgeLinkouts.Cosmos.HTTP do
     end
   end
 
-  defp doc_link(cfg, id) do
-    "dbs/#{cfg.db}/colls/#{cfg.container}/docs/#{URI.encode(id, &URI.char_unreserved?/1)}"
+  # The two forms of one resource link, kept side by side so they cannot drift again.
+  # `url_link` is what the request path carries (percent-encoded); `signed_link` is what the
+  # authorization signature covers (the raw id). See the comment in do_request/1.
+  @doc """
+  The URL form and the signature form of one document's resource link, in that order.
+
+  They differ only when an id contains a character the URL must escape — and they differ in a
+  way that matters: signing the escaped form rejects exactly those documents with a 401.
+  """
+  @doc since: "0.1.0"
+  @doc section: :internal
+  @spec doc_links(%{db: String.t(), container: String.t()}, String.t()) ::
+          {url_link :: String.t(), signed_link :: String.t()}
+  def doc_links(cfg, id) do
+    url_link =
+      "dbs/#{cfg.db}/colls/#{cfg.container}/docs/#{URI.encode(id, &URI.char_unreserved?/1)}"
+
+    signed_link = "dbs/#{cfg.db}/colls/#{cfg.container}/docs/#{id}"
+
+    {url_link, signed_link}
   end
 
   defp url(cfg, link) do

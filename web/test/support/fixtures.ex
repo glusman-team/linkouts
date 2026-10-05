@@ -6,26 +6,78 @@ defmodule EdgeLinkoutsWeb.Fixtures do
   than inventing documents. The blob builder exists for cases the fixtures cannot
   express - a hostile subject name, or a blob with a specific added/removed/changed
   field triple - and encodes exactly the documented ADR 0001 wire format.
+
+  docs.ndjson holds both kinds of document the CLI writes: edge blobs, and the reserved
+  pool documents behind `/random` (one index plus one pool per release). `edge_docs/0` and
+  `pool_ids/2` split them, so a test can assert on the real sample rather than a hand-made
+  list of ids that drifts from what the CLI produces.
   """
 
-  alias EdgeLinkouts.Codec
+  alias EdgeLinkouts.{Codec, Cosmos}
 
   @docs_path Path.expand("../fixtures/contract/docs.ndjson", __DIR__)
 
-  @v1 "drug-approvals-kg-1.11.2"
-  @v2 "drug-approvals-kg-1.16.0"
+  # The canonical load keys: the infores the graph is registered under, plus the release.
+  @v1 "infores:drugapprovals-kp-1.11.2"
+  @v2 "infores:drugapprovals-kp-1.16.0"
+  # The slug - the name without its infores prefix - is what is stored on a document, what a
+  # pool document id is built from, and what a URL carries.
+  @slug "drugapprovals-kp"
 
   def v1, do: @v1
   def v2, do: @v2
+  def slug, do: @slug
 
-  @doc "Every stored document in docs.ndjson, including the reserved pool document."
+  @doc "Every stored document in docs.ndjson, edges and reserved pool documents alike."
   def docs, do: read(@docs_path)
 
-  def edge_docs, do: Enum.reject(docs(), &(&1["id"] == EdgeLinkouts.Cosmos.reserved_pool_id()))
+  @doc "The edge documents in docs.ndjson: everything that is not a reserved pool document."
+  def edge_docs, do: Enum.reject(docs(), &Cosmos.reserved_id?(&1["id"]))
 
   def first_edge_id, do: hd(edge_docs())["id"]
 
   def edge_doc(id), do: Enum.find(edge_docs(), &(&1["id"] == id))
+
+  @doc """
+  The releases the fixture pool index lists for a graph, newest first.
+
+  Read from the fixture rather than written out here, so a regenerated fixture changes the
+  tests that depend on it instead of quietly disagreeing with them.
+  """
+  def fixture_releases(slug \\ @slug) do
+    fixture_index()
+    |> Map.get(slug, %{})
+    |> Map.keys()
+    |> Enum.sort(fn a, b -> Codec.compare_versions(a, b) == :gt end)
+  end
+
+  @doc "The decoded fixture pool index: `%{slug => %{label => %{edges:, sampled:, sampled_at:}}}`."
+  def fixture_index do
+    with %{} = doc <- Enum.find(docs(), &(&1["id"] == Cosmos.pool_index_id())),
+         {:ok, index} <- Cosmos.decode_pool_index_doc(doc) do
+      index
+    else
+      nil -> %{}
+      {:error, reason} -> raise "fixture pool index does not decode: #{inspect(reason)}"
+    end
+  end
+
+  @doc "The sampled edge ids the fixture pool holds for one release."
+  def pool_ids(label, slug \\ @slug) do
+    case Enum.find(docs(), &(&1["id"] == Cosmos.pool_doc_id(slug, label))) do
+      nil ->
+        []
+
+      doc ->
+        case Cosmos.decode_pool_doc(doc) do
+          {:ok, pool} ->
+            pool.ids
+
+          {:error, reason} ->
+            raise "fixture pool for #{slug} #{label} does not decode: #{inspect(reason)}"
+        end
+    end
+  end
 
   @doc "The resolved document for a stored fixture document at a version key."
   def resolved(%{"b" => b64}, key) do

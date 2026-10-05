@@ -18,8 +18,11 @@ import (
 )
 
 const (
-	keyV1 = "drug-approvals-kg-1.11.2"
-	keyV2 = "drug-approvals-kg-1.16.0"
+	// The keys are in the canonical infores form a real load uses; slugV is what gets stored on
+	// documents and in pool ids, the same name without the registry prefix.
+	keyV1 = "infores:drugapprovals-kp-1.11.2"
+	keyV2 = "infores:drugapprovals-kp-1.16.0"
+	slugV = "drugapprovals-kp"
 )
 
 func fixtures(t *testing.T) (nodes, edges string) {
@@ -70,13 +73,18 @@ func TestLoadFreshCreatesEveryEdge(t *testing.T) {
 		t.Errorf("created=%d merged=%d failed=%d, want 6/0/0", stats.Created, stats.Merged, stats.Failed)
 	}
 	docs := store.Docs()
-	// 6 edges plus the reserved random pool.
-	if len(docs) != 7 {
-		t.Errorf("stored %d documents, want 7 (6 edges + pool)", len(docs))
+	// 6 edges plus the two reserved documents: this release's pool and the pool index.
+	if len(docs) != 8 {
+		t.Errorf("stored %d documents, want 8 (6 edges + pool + index)", len(docs))
 	}
 	for id, d := range docs {
-		if id == cosmos.RandomPoolID {
+		if cosmos.IsReservedID(id) {
 			continue
+		}
+		// Every edge document says which graph stored it, in slug form: that is the field a
+		// future query would use, and it is what makes a document self-describing in the portal.
+		if d.KG != slugV {
+			t.Errorf("%s: k = %q, want the slug %q", id, d.KG, slugV)
 		}
 		blob := decode(t, d, nil)
 		if len(blob.Versions) != 1 {
@@ -128,7 +136,7 @@ func TestLoadSecondVersionMergesIntoExistingDocuments(t *testing.T) {
 	docs := store.Docs()
 	versions := 0
 	for id, d := range docs {
-		if id == cosmos.RandomPoolID {
+		if cosmos.IsReservedID(id) {
 			continue
 		}
 		blob := decode(t, d, nil)
@@ -189,7 +197,7 @@ func TestReloadSameKeyIsIdempotent(t *testing.T) {
 	}
 	after := store.Docs()
 	for id, d := range before {
-		if id == cosmos.RandomPoolID {
+		if cosmos.IsReservedID(id) {
 			continue
 		}
 		if after[id].Blob != d.Blob {
@@ -207,7 +215,7 @@ func TestReloadSameKeyIsIdempotent(t *testing.T) {
 		t.Errorf("merged = %d, want 6", stats.Merged)
 	}
 	for id, d := range store.Docs() {
-		if id == cosmos.RandomPoolID {
+		if cosmos.IsReservedID(id) {
 			continue
 		}
 		if n := len(decode(t, d, nil).Versions); n != 1 {
@@ -320,7 +328,7 @@ func TestDictionaryMismatchIsFatal(t *testing.T) {
 		t.Fatalf("Load with the matching dictionary: %v", err)
 	}
 	for id, d := range store.Docs() {
-		if id == cosmos.RandomPoolID {
+		if cosmos.IsReservedID(id) {
 			continue
 		}
 		blob := decode(t, d, dict)
@@ -356,7 +364,7 @@ func TestBaseKeyMustExistInStoredDocument(t *testing.T) {
 	}
 	second := baseOptions(t, store)
 	second.Key = keyV2
-	second.BaseKey = "drug-approvals-kg-0.9.9"
+	second.BaseKey = "infores:drugapprovals-kp-0.9.9"
 	_, err := Load(ctx, second)
 	if err == nil {
 		t.Fatal("a --base version that is not stored was accepted")
@@ -366,7 +374,9 @@ func TestBaseKeyMustExistInStoredDocument(t *testing.T) {
 	}
 }
 
-func TestRandomPoolIsWrittenAndMerged(t *testing.T) {
+// Each release gets its own pool document, and the index lists them with the counts a weighted
+// random pick needs. Reloading one release must not disturb the other.
+func TestRandomPoolIsWrittenPerReleaseAndIndexed(t *testing.T) {
 	store := cosmos.NewFake(nil)
 	ctx := context.Background()
 	opt := baseOptions(t, store)
@@ -374,7 +384,8 @@ func TestRandomPoolIsWrittenAndMerged(t *testing.T) {
 	if _, err := Load(ctx, opt); err != nil {
 		t.Fatalf("first Load: %v", err)
 	}
-	pool := readPool(t, store, nil)
+
+	pool := readPool(t, store, nil, slugV, "1.11.2")
 	if pool.Schema != codec.PoolSchema {
 		t.Errorf("pool schema = %q", pool.Schema)
 	}
@@ -382,7 +393,7 @@ func TestRandomPoolIsWrittenAndMerged(t *testing.T) {
 		t.Errorf("pool holds %d ids, want the cap of 4", len(pool.IDs))
 	}
 	if pool.Key != keyV1 {
-		t.Errorf("pool key = %q", pool.Key)
+		t.Errorf("pool key = %q, want %q", pool.Key, keyV1)
 	}
 	for _, id := range pool.IDs {
 		if _, err := store.Read(ctx, id); err != nil {
@@ -390,26 +401,86 @@ func TestRandomPoolIsWrittenAndMerged(t *testing.T) {
 		}
 	}
 
-	// A second load merges rather than replaces, so /random stays unscoped across releases.
+	index := readIndex(t, store, nil)
+	rel := index.KGs[slugV].Versions["1.11.2"]
+	if rel.Sampled != 4 {
+		t.Errorf("index says %d sampled, want 4", rel.Sampled)
+	}
+	if rel.Edges != 6 {
+		t.Errorf("index says %d edges, want the 6 fixture edges", rel.Edges)
+	}
+	if rel.SampledAt == "" {
+		t.Error("index entry has no sampled_at")
+	}
+
+	// A second release writes its own pool and adds an index entry, leaving the first alone.
 	second := baseOptions(t, store)
 	second.Key = keyV2
 	second.SampleSize = 4
 	if _, err := Load(ctx, second); err != nil {
 		t.Fatalf("second Load: %v", err)
 	}
-	merged := readPool(t, store, nil)
-	if len(merged.IDs) != 4 {
-		t.Errorf("merged pool holds %d ids, want it capped at 4", len(merged.IDs))
+	if _, err := store.Read(ctx, cosmos.PoolDocID(slugV, "1.11.2")); err != nil {
+		t.Errorf("the first release's pool was disturbed by loading the second: %v", err)
 	}
-	if merged.Key != keyV2 {
-		t.Errorf("merged pool key = %q, want the most recent", merged.Key)
+	other := readPool(t, store, nil, slugV, "1.16.0")
+	if other.Key != keyV2 || len(other.IDs) != 4 {
+		t.Errorf("second pool = key %q with %d ids, want %q with 4", other.Key, len(other.IDs), keyV2)
+	}
+	index = readIndex(t, store, nil)
+	if got := len(index.KGs[slugV].Versions); got != 2 {
+		t.Errorf("index lists %d releases, want 2", got)
 	}
 	seen := map[string]bool{}
-	for _, id := range merged.IDs {
+	for _, rel := range []codec.VersionPool{
+		index.KGs[slugV].Versions["1.11.2"],
+		index.KGs[slugV].Versions["1.16.0"],
+	} {
+		if seen[rel.SampledAt] && rel.SampledAt == "" {
+			t.Error("index entries have no sampled_at")
+		}
+		seen[rel.SampledAt] = true
+	}
+}
+
+// Reloading the same key refills its pool rather than shrinking it, and the index keeps the
+// larger edge count so a partial re-run cannot bias random away from that release.
+func TestReloadSameKeyRefillsItsOwnPool(t *testing.T) {
+	store := cosmos.NewFake(nil)
+	ctx := context.Background()
+	opt := baseOptions(t, store)
+	opt.SampleSize = 4
+	if _, err := Load(ctx, opt); err != nil {
+		t.Fatalf("first Load: %v", err)
+	}
+	before := readPool(t, store, nil, slugV, "1.11.2")
+
+	again := baseOptions(t, store)
+	again.SampleSize = 4
+	if _, err := Load(ctx, again); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	after := readPool(t, store, nil, slugV, "1.11.2")
+	if len(after.IDs) != 4 {
+		t.Errorf("reloaded pool holds %d ids, want it capped at 4", len(after.IDs))
+	}
+	if after.Key != keyV1 {
+		t.Errorf("reloaded pool key = %q, want %q", after.Key, keyV1)
+	}
+	seen := map[string]bool{}
+	for _, id := range after.IDs {
 		if seen[id] {
-			t.Errorf("pool contains %s twice, which would bias /random", id)
+			t.Errorf("pool contains %s twice, which would bias random", id)
 		}
 		seen[id] = true
+	}
+	for _, id := range before.IDs {
+		if !seen[id] {
+			t.Logf("note: %s was in the first sample but not the merged one (expected: the union is re-reservoired)", id)
+		}
+	}
+	if got := readIndex(t, store, nil).KGs[slugV].Versions["1.11.2"].Edges; got != 6 {
+		t.Errorf("index edge count after reload = %d, want it to stay 6", got)
 	}
 }
 
@@ -486,6 +557,29 @@ func TestProgressReceivesSnapshots(t *testing.T) {
 	}
 }
 
+// The progress line's ru= must track the budget as the run goes, not only appear in the final
+// summary: an hour-long Cosmos load reporting ru=0.0 the whole way hides pacing problems.
+func TestProgressSnapshotsCarryLiveRU(t *testing.T) {
+	budget := ratelimit.New(100000) // fast enough not to slow the test, real enough to account
+	store := cosmos.NewFake(budget)
+	store.ChargeFor["create"] = 5.5
+	store.ChargeFor["read"] = 1.0
+	opt := baseOptions(t, store)
+	opt.Budget = budget
+	rec := &recordingProgress{}
+	opt.Progress = rec
+	if _, err := Load(context.Background(), opt); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	last := rec.calls[len(rec.calls)-1]
+	if last.snap.RU <= 0 {
+		t.Error("final snapshot carries no RU at all")
+	}
+	if want := budget.Consumed(); last.snap.RU != want {
+		t.Errorf("final snapshot reports RU=%v, want the live total %v", last.snap.RU, want)
+	}
+}
+
 func TestTextProgressFormats(t *testing.T) {
 	var buf safeBuffer
 	p := NewTextProgress(&buf, 100)
@@ -527,17 +621,25 @@ func (r *recordingProgress) Report(s Snapshot, final bool) {
 	}{s, final})
 }
 
-func readPool(t *testing.T, store *cosmos.Fake, dict []byte) codec.Pool {
+func readPool(t *testing.T, store *cosmos.Fake, dict []byte, slug, label string) codec.Pool {
 	t.Helper()
-	d, err := store.Read(context.Background(), cosmos.RandomPoolID)
+	pool, err := ReadPool(context.Background(), store, dict, slug, label)
 	if err != nil {
-		t.Fatalf("read pool: %v", err)
-	}
-	var pool codec.Pool
-	if err := codec.DecodeJSON(d.Blob, dict, &pool); err != nil {
-		t.Fatalf("decode pool: %v", err)
+		t.Fatalf("read pool %s/%s: %v", slug, label, err)
 	}
 	return pool
+}
+
+func readIndex(t *testing.T, store *cosmos.Fake, dict []byte) codec.PoolIndex {
+	t.Helper()
+	index, err := ReadPoolIndex(context.Background(), store, dict)
+	if err != nil {
+		t.Fatalf("read pool index: %v", err)
+	}
+	if index.Schema != codec.PoolIndexSchema {
+		t.Errorf("index schema = %q, want %q", index.Schema, codec.PoolIndexSchema)
+	}
+	return index
 }
 
 func buildTestDict(t *testing.T) ([]byte, error) {

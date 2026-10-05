@@ -9,8 +9,8 @@ defmodule EdgeLinkouts.Display.Version do
   as `EdgeLinkouts.Codec.compare_keys/2`.
 
   A requirement may be given a bare version (`">1.0.0"`) and is matched against either a bare
-  version or a full key (`"drug-approvals-kg-1.11.2"`), since that is what a resolved document
-  carries.
+  version or a full key (`"infores:drugapprovals-kp-1.11.2"`), since that is what a resolved
+  document carries.
   """
 
   @doc """

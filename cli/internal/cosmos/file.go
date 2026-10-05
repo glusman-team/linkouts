@@ -148,6 +148,71 @@ func (s *FileStore) Provision(context.Context) error {
 	return fh.Close()
 }
 
+// Delete drops a document from the in-memory index. The file is append-only, so the line that
+// stored it stays until Close compacts the file — which is also what makes a bulk purge cheap:
+// one rewrite at the end rather than one per deletion.
+func (s *FileStore) Delete(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.docs[id]; !ok {
+		return fmt.Errorf("%s: %w", id, ErrNotFound)
+	}
+	delete(s.docs, id)
+	return s.budget.Take(ctx, 0)
+}
+
+// All streams every stored document in sorted id order. A file store can always do this, unlike
+// Cosmos with indexing off, which is why purge is tested here.
+func (s *FileStore) All(ctx context.Context, fn func(Doc) error) error {
+	s.mu.RLock()
+	ids := make([]string, 0, len(s.docs))
+	for id := range s.docs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	docs := make([]Doc, 0, len(ids))
+	for _, id := range ids {
+		docs = append(docs, s.docs[id])
+	}
+	s.mu.RUnlock()
+	for _, d := range docs {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if err := fn(d); err != nil {
+			return err
+		}
+	}
+	return s.budget.Take(ctx, 0)
+}
+
+// DropAll empties the store: the index is cleared and the file truncated in place. The append
+// handle stays open — it was opened O_APPEND, so subsequent writes land at the new end of file.
+func (s *FileStore) DropAll(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.docs = map[string]Doc{}
+	if s.fh != nil {
+		if err := s.fh.Truncate(0); err != nil {
+			return fmt.Errorf("truncate %s: %w", s.path, err)
+		}
+	}
+	if err := os.Truncate(s.path, 0); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("truncate %s: %w", s.path, err)
+	}
+	return s.budget.Take(ctx, 0)
+}
+
+// Stats reports the document count. A file store has no resource-usage headers, so Usage and
+// Quota stay empty.
+func (s *FileStore) Stats(context.Context) (StoreStats, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return StoreStats{Items: len(s.docs)}, nil
+}
+
 // Name reports the path, so logs show which file a run wrote to.
 func (s *FileStore) Name() string { return "file:" + s.path }
 
@@ -191,12 +256,7 @@ func (s *FileStore) compact() error {
 	}
 	w := bufio.NewWriter(fh)
 	for _, id := range ids {
-		d := s.docs[id]
-		line, err := json.Marshal(struct {
-			ID     string `json:"id"`
-			Blob   string `json:"b"`
-			DictID uint32 `json:"d,omitempty"`
-		}{d.ID, d.Blob, d.DictID})
+		line, err := json.Marshal(storedShape(s.docs[id]))
 		if err != nil {
 			_ = fh.Close()
 			_ = os.Remove(tmp)
@@ -240,11 +300,7 @@ func (s *FileStore) append(ctx context.Context, d Doc) error {
 		return fmt.Errorf("%s: empty blob", d.ID)
 	}
 	d.ETag = newETag()
-	line, err := json.Marshal(struct {
-		ID     string `json:"id"`
-		Blob   string `json:"b"`
-		DictID uint32 `json:"d,omitempty"`
-	}{d.ID, d.Blob, d.DictID})
+	line, err := json.Marshal(storedShape(d))
 	if err != nil {
 		return fmt.Errorf("%s: %w", d.ID, err)
 	}
@@ -258,6 +314,18 @@ func (s *FileStore) append(ctx context.Context, d Doc) error {
 	// A file write costs no RUs, but the budget still gets told so a mixed run (file store
 	// for output, Cosmos for reads) accounts correctly.
 	return s.budget.Take(ctx, 0)
+}
+
+// storedShape is the on-disk document: the stored fields in ADR 0001's order, and nothing else.
+// Both the append and the compaction path marshal through it, so the two cannot drift and write
+// different shapes for the same document.
+func storedShape(d Doc) any {
+	return struct {
+		ID     string `json:"id"`
+		Blob   string `json:"b"`
+		DictID uint32 `json:"d,omitempty"`
+		KG     string `json:"k,omitempty"`
+	}{d.ID, d.Blob, d.DictID, d.KG}
 }
 
 func newETag() string {

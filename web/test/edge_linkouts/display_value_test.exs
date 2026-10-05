@@ -39,4 +39,71 @@ defmodule EdgeLinkouts.Display.ValueTest do
       assert number(9, :int) == "9"
     end
   end
+
+  describe "{:local, field}" do
+    test "a CURIE renders as its local id" do
+      ctx = %{
+        doc: %{"p" => "biolink:applied_to_treat"},
+        version: "kg-1.0.0",
+        slots: %{},
+        aliases: %{}
+      }
+
+      assert {:local, "p"} |> Value.render(ctx) |> Segment.to_text() == "applied_to_treat"
+    end
+
+    test "a value with no prefix passes through; a missing field renders nothing" do
+      ctx = %{doc: %{"c" => "CHEBI:1234"}, version: "kg-1.0.0", slots: %{}, aliases: %{}}
+
+      assert {:local, "c"} |> Value.render(ctx) |> Segment.to_text() == "1234"
+      assert {:local, "missing"} |> Value.render(ctx) == []
+    end
+
+    test "a url template resolves slots before fields, so a local id can build a docs link" do
+      ctx = %{
+        doc: %{"p" => "biolink:treats"},
+        version: "kg-1.0.0",
+        slots: %{"local" => {:local, "p"}, "words" => {:humanize, "p"}},
+        aliases: %{}
+      }
+
+      spec = {:url, "https://biolink.github.io/biolink-model/{local}/", "{words}"}
+      assert [{:link, href, "treats"}] = Value.render(spec, ctx)
+      assert href == "https://biolink.github.io/biolink-model/treats/"
+    end
+  end
+
+  describe "{:list, field, inner, separator, max}" do
+    defp list_ctx do
+      %{
+        doc: %{
+          "ps" => ["dailymed:a1", "dailymed:b2", "dailymed:c3", "dailymed:d4", "dailymed:e5"]
+        },
+        version: "kg-1.0.0",
+        slots: %{},
+        aliases: %{}
+      }
+    end
+
+    test "the first max items stay inline and the rest fold into one {:more} segment" do
+      segments = Value.render({:list, "ps", {:field, "self"}, ", ", 2}, list_ctx())
+
+      assert [{:text, prefix}, {:more, hidden}] = segments
+      assert prefix =~ "dailymed:a1, dailymed:b2"
+      # The fold carries its leading separator, so a flattened read is the full list.
+      assert Segment.to_text(hidden) == ", dailymed:c3, dailymed:d4, dailymed:e5"
+
+      assert Segment.to_text(segments) ==
+               "dailymed:a1, dailymed:b2, dailymed:c3, dailymed:d4, dailymed:e5"
+    end
+
+    test "a list that fits under the cap renders with no fold at all" do
+      segments = Value.render({:list, "ps", {:field, "self"}, ", ", 9}, list_ctx())
+
+      refute Enum.any?(segments, &match?({:more, _}, &1))
+
+      assert Segment.to_text(segments) ==
+               "dailymed:a1, dailymed:b2, dailymed:c3, dailymed:d4, dailymed:e5"
+    end
+  end
 end

@@ -1,11 +1,13 @@
 defmodule EdgeLinkouts.Dedupe do
   @moduledoc """
-  Collapses concurrent identical reads: one Cosmos read per document id, not one per caller.
+  Collapses concurrent identical reads: one Cosmos read per document id, not one per caller,
+  and replays recent successes from `EdgeLinkouts.Cache`.
 
   Two browsers opening the same edge within a millisecond must produce one backend call.
   `execute/3` makes the first caller the leader, which runs the function; concurrent
   callers for the same id wait and receive the leader's exact result. The result is shared
-  by message, not cached: this is request coalescing, not an HTTP cache (PLAN.md D5).
+  by message, not cached: the coalescing half is request dedupe, not an HTTP cache
+  (PLAN.md D5).
 
   Failure handling:
 
@@ -17,27 +19,28 @@ defmodule EdgeLinkouts.Dedupe do
 
   Recent results:
 
-  A LiveView page view mounts twice, once for the static HTTP render and once for the connected
-  process, a few hundred milliseconds apart. Coalescing alone cannot merge those, because the
-  first read has finished before the second starts, so every page view cost two Cosmos reads.
-  Successful results are therefore kept for `:ttl_ms` (default 30 s, PLAN.md D5) in a public ETS
-  table that callers read directly, without a GenServer round trip. Only `{:ok, _}` is kept: a
-  404, a throttle or an outage is retried rather than replayed for 30 seconds. The table is
-  bounded by `:max_entries`; when it is full, expired entries are swept, and if it is still full
-  the new result is not stored. Nothing is ever evicted early, so the bound costs only hit rate.
+  A LiveView page view mounts twice, once for the static HTTP render and once for the
+  connected process, a few hundred milliseconds apart. Coalescing alone cannot merge those,
+  because the first read has finished before the second starts, so every page view would
+  cost two Cosmos reads. Successful results are therefore replayed for `:ttl_ms`
+  (default 30 s, PLAN.md D5) from the cache named by the `:cache` option
+  (`EdgeLinkouts.Cache` by default); a read may pass `:ttl_ms` to override the default,
+  which is how pool documents replay for 15 minutes (see the web read path). Only
+  `{:ok, _}` is kept: a 404, a throttle or an outage is retried rather than replayed.
 
-  Stored documents change only when the CLI loads a new release. A page opened in the first 30 s
-  after a load can show the previous release, which costs nothing because the version switcher
-  still lists what the blob held when it was read.
+  The cache is read from the calling process, so the hot path never waits on this
+  GenServer; the server only writes, and the write is a synchronous call before the leader
+  returns, so a connected mount that follows the static render cannot race past the store.
 
   Single node by design: the app runs as one Fly machine, so there is no `:global`.
   """
 
   use GenServer
 
+  alias EdgeLinkouts.Cache
+
   @default_wait_ms 500
   @default_ttl_ms 30_000
-  @default_max_entries 10_000
 
   def start_link(opts \\ []) do
     opts = Keyword.put_new(opts, :name, __MODULE__)
@@ -49,16 +52,25 @@ defmodule EdgeLinkouts.Dedupe do
 
   Returns exactly what `fun` returns. If this process is not the leader, it waits up to
   the configured `:wait_ms` for the leader's result, then calls `fun` itself.
+
+  `opts`:
+
+  - `:ttl_ms` — how long a successful result may be replayed, overriding the server default.
+    A read of a document the CLI only rewrites on a load (the pool index, one release's pool)
+    can be replayed for minutes without showing anything stale to a person; an edge document
+    uses the default, so a page view right after a load shows the release that was just loaded.
+    The override is ignored when the server's own `:ttl_ms` is zero, which is how tests turn
+    caching off: a caller must not be able to switch it back on behind their back.
   """
-  @spec execute(term(), (-> result), GenServer.name()) :: result when result: var
-  def execute(id, fun, server \\ __MODULE__) do
+  @spec execute(term(), (-> result), GenServer.name(), keyword()) :: result when result: var
+  def execute(id, fun, server \\ __MODULE__, opts \\ []) do
     case recent(server, id) do
       {:ok, result} ->
         result
 
       :miss ->
         case GenServer.call(server, {:begin, id}) do
-          {:leader, key} -> lead(key, fun, server)
+          {:leader, key} -> lead(key, fun, server, Keyword.get(opts, :ttl_ms))
           {:wait, key, wait_ms} -> wait(key, fun, wait_ms, server)
         end
     end
@@ -68,27 +80,43 @@ defmodule EdgeLinkouts.Dedupe do
   @spec clear(GenServer.name()) :: :ok
   def clear(server \\ __MODULE__), do: GenServer.call(server, :clear)
 
-  # Read the recent-results table from the calling process. A miss, an expired entry, or a server
-  # that is not running all fall through to a normal read.
+  # Read the recent-results cache from the calling process. A miss, a cache that is not
+  # running, or a server that is not running all fall through to a normal read.
+  # with_dynamic_cache/2 is how Nebulex v3 scopes calls to a named instance: the leading-arg
+  # arities collide with the public defaults (Cache.get(instance, key) would read key=:instance
+  # on the default cache), so there is no per-call instance argument.
   defp recent(server, id) do
-    with name when is_atom(name) <- server,
-         table when table != :undefined <- :ets.whereis(table_name(name)),
-         [{^id, result, expires_at}] <- :ets.lookup(table, id),
-         true <- System.monotonic_time(:millisecond) < expires_at do
-      {:ok, result}
-    else
-      _ -> :miss
+    case cache_for(server) do
+      cache when is_atom(cache) ->
+        Cache.with_dynamic_cache(cache, fn ->
+          # fetch, not get: get returns {:ok, default} on a miss, which would masquerade as a
+          # cached nil and skip the read.
+          case Cache.fetch(id) do
+            {:ok, result} -> {:ok, result}
+            _ -> :miss
+          end
+        end)
+
+      _ ->
+        :miss
     end
   end
 
-  defp table_name(server), do: :"#{server}.recent"
+  # The cache name is resolved through :persistent_term, not passed through execute/3, so
+  # the server side (which stores) and the caller side (which reads) resolve it the same
+  # way. Same pattern as EdgeLinkouts.RateLimiter keeping its atomics ref there.
+  defp cache_for(server) when is_atom(server) do
+    :persistent_term.get({__MODULE__, :cache, server}, nil)
+  end
 
-  defp lead(key, fun, server) do
+  defp cache_for(_server), do: nil
+
+  defp lead(key, fun, server, ttl_ms) do
     result = fun.()
-    # A call, not a cast: the result must be in the recent-results table before this process
-    # returns, or the connected mount that follows the static render races past the insert and
-    # reads Cosmos a second time.
-    :ok = GenServer.call(server, {:done, key, result})
+    # A call, not a cast: the result must be in the cache before this process returns, or
+    # the connected mount that follows the static render races past the store and reads
+    # Cosmos a second time.
+    :ok = GenServer.call(server, {:done, key, result, ttl_ms})
     result
   rescue
     e ->
@@ -113,14 +141,12 @@ defmodule EdgeLinkouts.Dedupe do
 
   # ---------------------------------------------------------------- server
 
-  defstruct claims: %{},
-            wait_ms: @default_wait_ms,
-            ttl_ms: @default_ttl_ms,
-            max_entries: @default_max_entries,
-            table: nil
+  defstruct claims: %{}, wait_ms: @default_wait_ms, ttl_ms: @default_ttl_ms, cache: Cache
 
   @impl true
   def init(opts) do
+    name = Keyword.fetch!(opts, :name)
+
     wait_ms =
       Keyword.get_lazy(opts, :wait_ms, fn ->
         Application.get_env(:edge_linkouts, :dedupe_wait_ms, @default_wait_ms)
@@ -131,23 +157,15 @@ defmodule EdgeLinkouts.Dedupe do
         Application.get_env(:edge_linkouts, :dedupe_ttl_ms, @default_ttl_ms)
       end)
 
-    max_entries = Keyword.get(opts, :max_entries, @default_max_entries)
+    cache = Keyword.get(opts, :cache, Cache)
+    :persistent_term.put({__MODULE__, :cache, name}, cache)
 
-    # Public for reads, so the hot path never waits on this process; only the server writes.
-    table =
-      :ets.new(table_name(Keyword.fetch!(opts, :name)), [
-        :set,
-        :named_table,
-        :protected,
-        read_concurrency: true
-      ])
-
-    {:ok, %__MODULE__{wait_ms: wait_ms, ttl_ms: ttl_ms, max_entries: max_entries, table: table}}
+    {:ok, %__MODULE__{wait_ms: wait_ms, ttl_ms: ttl_ms, cache: cache}}
   end
 
   @impl true
   def handle_call(:clear, _from, state) do
-    :ets.delete_all_objects(state.table)
+    _ = Cache.with_dynamic_cache(state.cache, fn -> Cache.delete_all() end)
     {:reply, :ok, state}
   end
 
@@ -168,13 +186,13 @@ defmodule EdgeLinkouts.Dedupe do
     end
   end
 
-  def handle_call({:done, key, result}, _from, state) do
+  def handle_call({:done, key, result, ttl_ms}, _from, state) do
     case fetch_claim(state, key) do
       nil ->
         {:reply, :ok, state}
 
       {id, _claim} = entry ->
-        remember(state, id, result)
+        remember(state, id, result, ttl_ms)
         {:reply, :ok, finish(entry, {:dedupe_result, key, result}, state)}
     end
   end
@@ -227,28 +245,18 @@ defmodule EdgeLinkouts.Dedupe do
   end
 
   # Only successes are kept: a 404, a throttle or an outage must be retried, not replayed.
-  defp remember(%{ttl_ms: ttl}, _id, _result) when ttl <= 0, do: :ok
+  # A server-wide ttl of zero disables caching entirely, and a caller's override cannot revive it.
+  defp remember(%{ttl_ms: default}, _id, _result, _override) when default <= 0, do: :ok
 
-  defp remember(state, id, {:ok, _} = result) do
-    if room?(state) do
-      :ets.insert(state.table, {id, result, System.monotonic_time(:millisecond) + state.ttl_ms})
-    end
-
+  defp remember(%{cache: cache} = state, id, {:ok, _} = result, override) do
+    ttl = if is_integer(override) and override > 0, do: override, else: state.ttl_ms
+    # The instance name (an atom) is resolved by recent/0 through the same :persistent_term
+    # entry, so both sides of a store see one cache.
+    _ = Cache.with_dynamic_cache(cache, fn -> Cache.put(id, result, ttl: ttl) end)
     :ok
   end
 
-  defp remember(_state, _id, _result), do: :ok
-
-  defp room?(state) do
-    :ets.info(state.table, :size) < state.max_entries or sweep(state) < state.max_entries
-  end
-
-  # Deletes expired entries and returns the remaining size.
-  defp sweep(state) do
-    now = System.monotonic_time(:millisecond)
-    :ets.select_delete(state.table, [{{:_, :_, :"$1"}, [{:"=<", :"$1", now}], [true]}])
-    :ets.info(state.table, :size)
-  end
+  defp remember(_state, _id, _result, _override), do: :ok
 
   defp put_claim(state, id, claim), do: %{state | claims: Map.put(state.claims, id, claim)}
 

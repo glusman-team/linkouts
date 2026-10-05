@@ -165,9 +165,10 @@ func printReport(path string, seen, malformed int, predicates map[string]int, st
 // emitConfig writes a starter kgs/*.exs in the display grammar the web app loads.
 //
 // The output must compile as-is: `mix linkouts.check` loads it, and a starter that fails to parse
-// teaches people to hand-edit rather than regenerate. So every field becomes one evidence row
-// gated on {:present, ...}, the sentence is a neutral subject/predicate/object template, and the
-// only TODOs are the ones a human has to decide — the name, the prose, and which rows to keep.
+// teaches people to hand-edit rather than regenerate. So every field becomes one evidence
+// sentence gated on {:present, ...}, phrased as "Field name: <spec>." so it reads as prose with
+// no storage key in sight, and the only TODOs are the ones a human has to decide — the name, the
+// prose, and which sentences to keep.
 //
 // Fields the join adds or the page already shows are skipped, so the starter lists only what the
 // KG itself asserts.
@@ -201,7 +202,7 @@ func emitConfig(path string, stats map[string]*fieldStats) error {
 # This compiles as-is. To finish it:
 #   1. set name to the <name> part of the version key you load with (e.g. "my-kg" for my-kg-1.0.0)
 #   2. replace the edge sentence; {:pick, "predicate", ...} lets each predicate read differently
-#   3. delete the evidence rows a reviewer does not need, and relabel the rest
+#   3. delete the evidence sentences a reviewer does not need, and rewrite the rest in the KG's voice
 # Then run `+"`cd web && mix linkouts.check`"+`. See docs/pages/add-a-kg.md.
 #
 # Predicates observed:
@@ -227,8 +228,8 @@ func emitConfig(path string, stats map[string]*fieldStats) error {
   evidence: [`)
 	for _, k := range names {
 		printf("    # e.g. %s\n", exampleComment(fields[k]))
-		printf("    %%{label: %s, value: %s, if: [{:present, %s}]},\n",
-			elixirString(humanize(k)), valueSpecFor(k, stats), elixirString(k))
+		printf("    %%{value: \"%s: %s.\", if: [{:present, %s}]},\n",
+			humanize(k), valueSpecFor(k, stats), elixirString(k))
 	}
 	println("  ]\n}")
 	return nil
@@ -243,7 +244,8 @@ var rigShownElsewhere = map[string]bool{
 }
 
 // valueSpecFor picks a value form from the shape rig observed: lists of CURIE-like strings get
-// linked, other lists are joined, scalars are shown as-is.
+// linked, other lists are joined, scalars are humanized — a starter sentence must not print a
+// storage key like manual_validation_of_automated_agent where words belong.
 func valueSpecFor(field string, stats map[string]*fieldStats) string {
 	isList, curieLike := false, false
 	var keys []string
@@ -275,7 +277,7 @@ func valueSpecFor(field string, stats map[string]*fieldStats) string {
 	case isList:
 		return `{:list, ` + q + `, {:field, "self"}, ", "}`
 	default:
-		return `{:field, ` + q + `}`
+		return `{:humanize, ` + q + `}`
 	}
 }
 

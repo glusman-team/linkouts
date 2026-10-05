@@ -123,3 +123,71 @@ func TestSameKG(t *testing.T) {
 		t.Error("different KGs matched")
 	}
 }
+
+// The canonical KG name carries the infores registry prefix, which has a colon in it. The split
+// point is still the hyphen before the numeric version, so the prefix must not confuse it.
+func TestParseInforesKeys(t *testing.T) {
+	cases := []struct{ in, kg, version, slug string }{
+		{"infores:drugapprovals-kp-1.16.0", "infores:drugapprovals-kp", "1.16.0", "drugapprovals-kp"},
+		{"infores:drugapprovals-kp-1.11.2", "infores:drugapprovals-kp", "1.11.2", "drugapprovals-kp"},
+		{"infores:drugapprovals-kp-1.0.0-rc1", "infores:drugapprovals-kp", "1.0.0-rc1", "drugapprovals-kp"},
+		// A graph with no registry prefix is its own slug, and stays working.
+		{"my-kg-2.1.0", "my-kg", "2.1.0", "my-kg"},
+	}
+	for _, c := range cases {
+		got, err := Parse(c.in)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", c.in, err)
+		}
+		if got.KG != c.kg {
+			t.Errorf("Parse(%q).KG = %q, want %q", c.in, got.KG, c.kg)
+		}
+		if v := got.Version(); v != c.version {
+			t.Errorf("Parse(%q).Version() = %q, want %q", c.in, v, c.version)
+		}
+		if s := got.Slug(); s != c.slug {
+			t.Errorf("Parse(%q).Slug() = %q, want %q", c.in, s, c.slug)
+		}
+	}
+}
+
+func TestSlug(t *testing.T) {
+	cases := map[string]string{
+		"infores:drugapprovals-kp": "drugapprovals-kp",
+		"drugapprovals-kp":         "drugapprovals-kp",
+		"":                         "",
+		// Only a leading prefix is stripped: a name that merely contains one is left alone.
+		"not-infores:kg": "not-infores:kg",
+		"infores:":       "",
+	}
+	for in, want := range cases {
+		if got := Slug(in); got != want {
+			t.Errorf("Slug(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// Labels are what the pool index keys its releases by, and text order would put 1.9.0 after
+// 1.11.2 — which is exactly the bug the web app's version ordering exists to avoid.
+func TestCompareLabels(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want int
+	}{
+		{"1.9.0", "1.11.2", -1},
+		{"1.11.2", "1.16.0", -1},
+		{"1.16.0", "1.16.0", 0},
+		{"2.0.0", "1.99.99", 1},
+		// A pre-release sorts before the release it precedes.
+		{"1.0.0-rc1", "1.0.0", -1},
+	}
+	for _, c := range cases {
+		if got := CompareLabels(c.a, c.b); got != c.want {
+			t.Errorf("CompareLabels(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
+		}
+	}
+	// Unparseable labels still get a total order rather than a panic.
+	if CompareLabels("garbage", "also-garbage") == 0 {
+		t.Error("two different unparseable labels compared equal")
+	}
+}

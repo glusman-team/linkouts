@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -20,6 +22,14 @@ import (
 // workload that hits 429s, and the SDK's backoff already honours x-ms-retry-after-ms
 // (ADR 0002). Retrying here too would double the wait and hide throttling from the budget.
 const maxSDKRetries = 5
+
+// DropAll re-creates the container after deleting it, and Cosmos can take a moment to release the
+// name. These bound the wait: three tries over roughly six seconds, which is longer than the
+// teardown has ever taken and short enough that a real failure is reported rather than hung on.
+const (
+	dropAllRetries    = 3
+	dropAllRetryDelay = 2 * time.Second
+)
 
 // AzureStore is the Cosmos DB backend. Writes use the read-write key; the web app never
 // touches this type and uses the read-only key over REST instead.
@@ -177,6 +187,169 @@ func (s *AzureStore) Replace(ctx context.Context, d Doc, etag string) error {
 	return nil
 }
 
+// Delete removes one document. Deleting a document that is not there is a 404, which callers
+// compare against ErrNotFound; purge treats it as already-done rather than as failure.
+func (s *AzureStore) Delete(ctx context.Context, id string) error {
+	resp, err := s.container.DeleteItem(ctx, azcosmos.NewPartitionKeyString(id), id, nil)
+	s.charge(ctx, resp.RequestCharge)
+	if err != nil {
+		return mapError(err)
+	}
+	return nil
+}
+
+// All streams every document through a cross-partition query.
+//
+// This container's indexing policy is none, which is what makes its writes and reads cheap, and
+// Cosmos serves a query out of the index — so the service is expected to refuse this with a
+// BadRequest. The refusal is mapped to ErrScanUnsupported with the operator's way out in the
+// message, rather than retried or worked around: the honest alternatives are DropAll (drop the
+// container and reload) or temporarily switching the indexing policy to consistent.
+func (s *AzureStore) All(ctx context.Context, fn func(Doc) error) error {
+	pager := s.container.NewQueryItemsPager("SELECT * FROM c", azcosmos.NewPartitionKey(), nil)
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			s.charge(ctx, resp.RequestCharge)
+			return scanError(mapError(err))
+		}
+		s.charge(ctx, resp.RequestCharge)
+		for _, raw := range resp.Items {
+			doc, err := decodeDoc(raw)
+			if err != nil {
+				return err
+			}
+			if err := fn(doc); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// scanError explains a refused scan instead of surfacing a raw BadRequest. A 400 here is almost
+// always the indexing policy, and "indexing is off" is not something the message from the service
+// says in so many words.
+func scanError(err error) error {
+	var rerr *azcore.ResponseError
+	if errors.As(err, &rerr) && rerr.StatusCode == http.StatusBadRequest {
+		return fmt.Errorf("%w: cosmos answered 400 (%s); this container's indexing policy is none, "+
+			"so it cannot serve a scan — use `linkouts purge --all` and reload, or set the indexing "+
+			"policy to consistent first", ErrScanUnsupported, rerr.ErrorCode)
+	}
+	return err
+}
+
+// DropAll deletes the container and provisions it again with the same partition key and indexing
+// policy. Dropping is immediate and free, which is why a wipe-and-reload uses it rather than
+// deleting 130k documents one request at a time.
+//
+// Cosmos can still be tearing down the old container when the create arrives, and answers 409 for
+// a name it has not finished releasing. That 409 is retried rather than accepted, because
+// accepting it would leave the old container — and every document in it — in place while
+// reporting success.
+func (s *AzureStore) DropAll(ctx context.Context) error {
+	if _, err := s.container.Delete(ctx, nil); err != nil {
+		if mapped := mapError(err); !errors.Is(mapped, ErrNotFound) {
+			return fmt.Errorf("delete container %s: %w", s.cfg.Container, mapped)
+		}
+	}
+	var last error
+	for attempt := range dropAllRetries {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(dropAllRetryDelay):
+			}
+		}
+		if err := s.Provision(ctx); err != nil {
+			last = err
+			continue
+		}
+		// A create that lands while the old container is still being released can succeed and then
+		// leave the container unusable for a moment; one read confirms it is really back.
+		if _, err := s.container.Read(ctx, nil); err == nil {
+			return nil
+		}
+		last = errors.New("container was re-created but is not readable yet")
+	}
+	return fmt.Errorf("re-create container %s after drop: %w", s.cfg.Container, last)
+}
+
+// Stats reads the container's own metadata, which is where the service reports how many documents
+// and how much storage it holds. This is a metadata read, not a scan, so it costs nothing
+// meaningful and answers "did my load actually land" without opening the portal.
+func (s *AzureStore) Stats(ctx context.Context) (StoreStats, error) {
+	resp, err := s.container.Read(ctx, nil)
+	if err != nil {
+		return StoreStats{Items: -1}, mapError(err)
+	}
+	st := StoreStats{Items: -1}
+	if resp.RawResponse != nil {
+		st.Usage = resp.RawResponse.Header.Get("x-ms-resource-usage")
+		st.Quota = resp.RawResponse.Header.Get("x-ms-resource-quota")
+		st.Items = parseResourceCount(st.Usage)
+	}
+	st.Container = describeContainer(resp.ContainerProperties)
+	return st, nil
+}
+
+// describeContainer renders the settings that decide what this container costs: the partition key
+// every point read is addressed by, and the indexing policy that keeps writes at their minimum
+// and index storage at zero.
+func describeContainer(p *azcosmos.ContainerProperties) string {
+	if p == nil {
+		return ""
+	}
+	pk := strings.Join(p.PartitionKeyDefinition.Paths, ",")
+	if pk == "" {
+		pk = "(none)"
+	}
+	mode, automatic, included := "unreported", "", 0
+	if ip := p.IndexingPolicy; ip != nil {
+		mode = string(ip.IndexingMode)
+		if mode == "" {
+			mode = "consistent" // the service's default, which it omits rather than restates
+		}
+		if ip.Automatic {
+			automatic = ", automatic"
+		}
+		included = len(ip.IncludedPaths)
+	}
+	ttl := ""
+	if p.DefaultTimeToLive != nil {
+		ttl = fmt.Sprintf(" · ttl %ds", *p.DefaultTimeToLive)
+	}
+	analytical := ""
+	if p.AnalyticalStoreTimeToLiveInSeconds != nil {
+		analytical = " · analytical store on"
+	}
+	return fmt.Sprintf("partition key %s · indexing %s%s · %d indexed path%s%s%s",
+		pk, mode, automatic, included, plural(included), ttl, analytical)
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// parseResourceCount pulls the document count out of a resource-usage header
+// ("documents=123;collections=1;partitionKeyRanges=4;"), returning -1 when it is absent.
+func parseResourceCount(header string) int {
+	for _, part := range strings.Split(header, ";") {
+		key, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if ok && key == "documents" {
+			if n, err := strconv.Atoi(value); err == nil {
+				return n
+			}
+		}
+	}
+	return -1
+}
+
 // Name identifies the account and container in logs.
 func (s *AzureStore) Name() string {
 	return fmt.Sprintf("cosmos://%s/%s/%s", s.cfg.Endpoint, s.cfg.Database, s.cfg.Container)
@@ -197,8 +370,8 @@ func (s *AzureStore) charge(ctx context.Context, ru float32) {
 	_ = s.budget.Take(ctx, float64(ru))
 }
 
-// encodeDoc renders the stored shape exactly as ADR 0001 specifies: id, b, and d only when
-// a dictionary was used.
+// encodeDoc renders the stored shape exactly as ADR 0001 specifies: id, b, d only when a
+// dictionary was used, and k only when the writer knew which knowledge graph the edge came from.
 func encodeDoc(d Doc) ([]byte, error) {
 	if d.ID == "" {
 		return nil, errors.New("document has no id")
@@ -210,7 +383,8 @@ func encodeDoc(d Doc) ([]byte, error) {
 		ID     string `json:"id"`
 		Blob   string `json:"b"`
 		DictID uint32 `json:"d,omitempty"`
-	}{d.ID, d.Blob, d.DictID}
+		KG     string `json:"k,omitempty"`
+	}{d.ID, d.Blob, d.DictID, d.KG}
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", d.ID, err)
@@ -223,6 +397,7 @@ func decodeDoc(raw []byte) (Doc, error) {
 		ID     string `json:"id"`
 		Blob   string `json:"b"`
 		DictID uint32 `json:"d"`
+		KG     string `json:"k"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return Doc{}, fmt.Errorf("decode stored document: %w", err)
@@ -230,7 +405,7 @@ func decodeDoc(raw []byte) (Doc, error) {
 	if payload.ID == "" || payload.Blob == "" {
 		return Doc{}, fmt.Errorf("stored document is missing id or b")
 	}
-	return Doc{ID: payload.ID, Blob: payload.Blob, DictID: payload.DictID}, nil
+	return Doc{ID: payload.ID, Blob: payload.Blob, DictID: payload.DictID, KG: payload.KG}, nil
 }
 
 // mapError translates an azcore.ResponseError into this package's sentinels so callers

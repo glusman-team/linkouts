@@ -12,9 +12,11 @@ import (
 
 // Defaults for the non-secret layout. They match .envrc.example.
 const (
-	DefaultDatabase   = "edge_linkouts"
-	DefaultContainer  = "edges"
-	DefaultRUps       = 450.0
+	DefaultDatabase  = "edge_linkouts"
+	DefaultContainer = "edges"
+	// DefaultRUps is the CLI's slice of the free tier's 1000 RU/s: 75%, because ingestion
+	// needs bursts; the web app gets 15% and 10% stays headroom.
+	DefaultRUps       = 750.0
 	DefaultThroughput = 1000 // free-tier ceiling; see ADR 0002
 	// PartitionKeyPath is /id: the edge UUID is the only thing ever queried.
 	PartitionKeyPath = "/id"

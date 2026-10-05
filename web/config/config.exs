@@ -15,13 +15,27 @@ config :edge_linkouts,
 # are configured; tests use EdgeLinkouts.Cosmos.Fake).
 config :edge_linkouts,
   cosmos_backend: EdgeLinkouts.Cosmos.HTTP,
-  # Web app's slice of the free tier's 1000 RU/s (CLI takes the other half).
-  ru_budget_web: 450,
+  # Web app's slice of the free tier's 1000 RU/s: 15% here, 75% for the CLI (it needs
+  # bursts for ingestion), 10% left as headroom for the portal and retries.
+  ru_budget_web: 150,
   # Point-read cost estimate used by RateLimiter.allow?/2 before the call. The actual
   # x-ms-request-charge is reconciled afterwards on every response.
   cosmos_estimated_read_ru: 10,
   # Bound on how long Dedupe waiters wait for a leader before reading directly.
-  dedupe_wait_ms: 500
+  dedupe_wait_ms: 500,
+  # How long a pool index / one release's pool may be replayed (see EdgeLinkoutsWeb.Edges).
+  pool_ttl_ms: 900_000
+
+# The recent-results cache behind EdgeLinkouts.Dedupe (see that module and EdgeLinkouts.Cache).
+config :edge_linkouts, EdgeLinkouts.Cache,
+  # Generation length: equal to the longest TTL class, so a 15 min entry dies with its
+  # generation at the latest; shorter classes expire on read long before that.
+  gc_interval: :timer.minutes(15),
+  # Same bound the old hand-rolled table had, now with real eviction behind it.
+  max_size: 10_000,
+  # Starting guess for a dev-sized machine; revisit when the Fly machine size is chosen.
+  allocated_memory: 64 * 1024 * 1024,
+  gc_memory_check_interval: :timer.seconds(10)
 
 # Configure the endpoint
 config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,

@@ -25,12 +25,12 @@ defmodule EdgeLinkouts.Display.Config do
             display_name: [
               type: :string,
               required: true,
-              doc: "Human name shown in the header and on the home page."
+              doc: "Human name shown in the edge page header."
             ],
             url: [type: :string, doc: "Link to the knowledge source's own documentation."],
             description: [
               type: :string,
-              doc: "Prose about the KP, shown on the home page and in the header."
+              doc: "Prose about the KP, shown in the edge page's about section."
             ],
             feedback_repo: [
               type: :string,
@@ -57,11 +57,32 @@ defmodule EdgeLinkouts.Display.Config do
             ],
             title: [type: :any, doc: "Short label for the page title and link previews."],
             edge: [type: :any, required: true, doc: "The sentence describing this relationship."],
+            relationship: [
+              type: :any,
+              doc: """
+              The text relationship line: subject, relation, object and every qualifier with
+              identifiers inline. When present it replaces the subject/predicate/object
+              diagram, which cannot scale to more than three slots.
+              """
+            ],
+            latest_version: [
+              type: :string,
+              doc: """
+              The release number this config was written against, e.g. "1.16.0". The page
+              tags that version as the latest in the header and on the timeline, so the
+              reader knows which stored version reflects the current knowledge graph without
+              diffing anything.
+              """
+            ],
             evidence: [
               type: {:list, :map},
               default: [],
-              doc:
-                "Evidence panel sections, each `%{label: spec, value: spec}` with optional `:if` conditions."
+              doc: """
+              Evidence sentences, each `%{value: spec}` with optional `:if` conditions. Every
+              sentence that passes its conditions and renders non-empty becomes part of one
+              prose paragraph on the edge page — the legacy page printed the same facts as
+              labelled lines; prose carries each fact's meaning without a field-name label.
+              """
             ]
           )
 
@@ -75,6 +96,8 @@ defmodule EdgeLinkouts.Display.Config do
     :slots,
     :title,
     :edge,
+    :relationship,
+    :latest_version,
     :evidence,
     :file
   ]
@@ -99,6 +122,7 @@ defmodule EdgeLinkouts.Display.Config do
          :ok <- validate_slots(validated[:slots], file),
          :ok <- validate_spec(validated[:edge], "edge", file),
          :ok <- validate_optional_spec(validated[:title], "title", file),
+         :ok <- validate_optional_spec(validated[:relationship], "relationship", file),
          :ok <- validate_evidence(validated[:evidence], file) do
       {:ok, struct(__MODULE__, Map.put(validated, :file, file))}
     else
@@ -151,19 +175,20 @@ defmodule EdgeLinkouts.Display.Config do
   end
 
   defp section_problems(section, where) do
+    # Each section is one sentence of the evidence paragraph; a sentence must render something.
     required =
-      for key <- [:value],
-          not Map.has_key?(section, key),
-          do: "#{where}: missing required key #{inspect(key)}"
+      if Map.has_key?(section, :value) do
+        []
+      else
+        ["#{where}: missing required key :value"]
+      end
 
-    value = spec_problems(Map.get(section, :value), "#{where}.value")
-
-    label =
-      spec_problems(Map.get(section, :label), "#{where}.label")
+    value =
+      spec_problems(Map.get(section, :value), "#{where}.value")
       |> Enum.reject(&(&1 =~ "nil spec"))
 
     conditions = condition_problems(Map.get(section, :if, []), "#{where}.if")
-    required ++ value ++ label ++ conditions
+    required ++ value ++ conditions
   end
 
   @doc false
@@ -185,11 +210,18 @@ defmodule EdgeLinkouts.Display.Config do
     do: ["#{where}: {:link, label_field, curie_field} expected, got #{inspect(other)}"]
 
   def spec_problems({:list, name, inner, separator}, where) do
-    cond do
-      not (is_binary(name) or is_atom(name)) -> ["#{where}: {:list, ...} needs a field name"]
-      not is_binary(separator) -> ["#{where}: {:list, ...} separator must be a string"]
-      true -> spec_problems(inner, "#{where}.inner")
-    end
+    list_problems(name, inner, separator, nil, where)
+  end
+
+  def spec_problems({:list, name, inner, separator, max}, where)
+      when is_integer(max) and max > 0 do
+    list_problems(name, inner, separator, max, where)
+  end
+
+  def spec_problems({:list, _, _, _, _} = other, where) do
+    [
+      "#{where}: {:list, field, inner, separator} or {:list, field, inner, separator, max} expected, got #{inspect(other)}"
+    ]
   end
 
   def spec_problems({:list, other}, where),
@@ -226,9 +258,9 @@ defmodule EdgeLinkouts.Display.Config do
     do: ["#{where}: {:number, field, :sig2 | :int} expected, got #{inspect(other)}"]
 
   def spec_problems({tag, name}, _where)
-      when tag in [:humanize, :count] and (is_binary(name) or is_atom(name)), do: []
+      when tag in [:humanize, :count, :local] and (is_binary(name) or is_atom(name)), do: []
 
-  def spec_problems({tag, _} = other, where) when tag in [:humanize, :count],
+  def spec_problems({tag, _} = other, where) when tag in [:humanize, :count, :local],
     do: ["#{where}: {#{inspect(tag)}, field} expected, got #{inspect(other)}"]
 
   def spec_problems({:default, name, fallback}, where) when is_binary(name) or is_atom(name) do
@@ -259,6 +291,15 @@ defmodule EdgeLinkouts.Display.Config do
   end
 
   def spec_problems(other, where), do: ["#{where}: unsupported spec #{inspect(other)}"]
+
+  # Shared checks for the capped and uncapped list forms; :max only changes the fold.
+  defp list_problems(name, inner, separator, _max, where) do
+    cond do
+      not (is_binary(name) or is_atom(name)) -> ["#{where}: {:list, ...} needs a field name"]
+      not is_binary(separator) -> ["#{where}: {:list, ...} separator must be a string"]
+      true -> spec_problems(inner, "#{where}.inner")
+    end
+  end
 
   defp condition_problems(conditions, where) when is_list(conditions) do
     Enum.flat_map(conditions, &condition_problem(&1, where))
@@ -417,13 +458,15 @@ defmodule EdgeLinkouts.Display.Config do
   @spec undefined_slots(t()) :: [String.t()]
   def undefined_slots(%__MODULE__{} = config) do
     defined = Map.keys(config.slots)
-    referenced = referenced_slots(config.edge) ++ referenced_slots(config.title)
+
+    referenced =
+      referenced_slots(config.edge) ++
+        referenced_slots(config.title) ++
+        referenced_slots(config.relationship)
 
     referenced =
       referenced ++
-        Enum.flat_map(config.evidence, fn section ->
-          referenced_slots(Map.get(section, :label)) ++ referenced_slots(Map.get(section, :value))
-        end) ++
+        Enum.flat_map(config.evidence, &referenced_slots(Map.get(&1, :value))) ++
         Enum.flat_map(Map.values(config.slots), &collect_spec_slots/1)
 
     # uniq/1 before --: list subtraction is multiset subtraction, so a slot referenced by two
@@ -442,6 +485,7 @@ defmodule EdgeLinkouts.Display.Config do
   end
 
   defp collect_spec_slots({:list, _name, inner, _sep}), do: collect_spec_slots(inner)
+  defp collect_spec_slots({:list, _name, inner, _sep, _max}), do: collect_spec_slots(inner)
 
   defp collect_spec_slots({:pick, _name, branches}) when is_map(branches) do
     Enum.flat_map(Map.values(branches), &collect_spec_slots/1)
@@ -452,7 +496,9 @@ defmodule EdgeLinkouts.Display.Config do
   end
 
   defp collect_spec_slots({:default, _name, fallback}), do: collect_spec_slots(fallback)
-  defp collect_spec_slots({:url, _template, label}), do: collect_spec_slots(label)
+  # The url template interpolates slots-then-fields just like a string template, so both count.
+  defp collect_spec_slots({:url, template, label}),
+    do: collect_spec_slots(template) ++ collect_spec_slots(label)
 
   defp collect_spec_slots({:if, _conditions, then_spec}) do
     collect_spec_slots(then_spec)

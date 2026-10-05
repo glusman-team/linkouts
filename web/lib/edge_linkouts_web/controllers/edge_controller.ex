@@ -22,7 +22,7 @@ defmodule EdgeLinkoutsWeb.EdgeController do
          {:ok, key} <- select_version(blob, params["version"]),
          {:ok, doc} <- Codec.resolve(blob, key) do
       send_download(conn, {:binary, Codec.canonical_binary(doc)},
-        filename: "edge-#{id}-#{key}.ndjson",
+        filename: "edge-#{id}-#{filename_key(key)}.ndjson",
         content_type: "application/x-ndjson"
       )
     else
@@ -69,4 +69,10 @@ defmodule EdgeLinkoutsWeb.EdgeController do
   end
 
   defp select_version(blob, nil), do: {:ok, Codec.newest(blob)}
+
+  # A canonical version key carries its registry scheme ("infores:drugapprovals-kp-1.16.0"), and
+  # a colon is illegal in a Windows filename and awkward in a shell. Everything that is safe on
+  # every filesystem stays; the rest becomes a hyphen, so the name still says which release the
+  # download is and still sorts beside its siblings.
+  defp filename_key(key), do: String.replace(key, ~r/[^A-Za-z0-9._+-]/, "-")
 end

@@ -7,8 +7,9 @@ defmodule EdgeLinkouts.Cosmos.FileTest do
 
   @docs Path.expand("../fixtures/contract/docs.ndjson", __DIR__)
   @edge_id "575af3e8-8015-3718-be03-4da18a0bacfc"
-  @v1 "drug-approvals-kg-1.11.2"
-  @v2 "drug-approvals-kg-1.16.0"
+  @slug "drugapprovals-kp"
+  @v1 "infores:drugapprovals-kp-1.11.2"
+  @v2 "infores:drugapprovals-kp-1.16.0"
 
   defp stored_docs do
     @docs
@@ -23,7 +24,10 @@ defmodule EdgeLinkouts.Cosmos.FileTest do
       assert {:ok, doc} = Cosmos.File.get_edge(@edge_id)
       assert doc["id"] == @edge_id
       assert is_binary(doc["b"]) and doc["b"] != ""
-      assert Map.keys(doc) -- ["id", "b", "d"] == []
+      assert Map.keys(doc) -- ["id", "b", "d", "k"] == []
+      # `k` is the graph's slug, the one field that says which graph an edge belongs to
+      # without decoding it.
+      assert doc["k"] == @slug
     end
 
     test "an unknown id is :not_found" do
@@ -31,13 +35,34 @@ defmodule EdgeLinkouts.Cosmos.FileTest do
     end
   end
 
-  describe "random_pool/0" do
-    test "decodes the reserved pool document into ids that are all stored" do
-      assert {:ok, ids} = Cosmos.File.random_pool()
-      assert ids != []
+  # The reserved documents are lines in the same file, read by id like any edge: that is what
+  # keeps /random a point read against a container with no indexes.
+  describe "reserved pool documents" do
+    test "the index lists every stored release with its counts" do
+      assert {:ok, doc} = Cosmos.File.get_edge(Cosmos.pool_index_id())
+      assert {:ok, index} = Cosmos.decode_pool_index_doc(doc)
+
+      releases = index[@slug]
+      assert Map.keys(releases) |> Enum.sort() == ["1.11.2", "1.16.0"]
+      # Counts only: no ids in the index, which is what keeps it about a kilobyte.
+      assert releases["1.16.0"].edges == 6
+      assert releases["1.16.0"].sampled == 6
+    end
+
+    test "one release's pool decodes into ids that are all stored" do
+      id = Cosmos.pool_doc_id(@slug, "1.16.0")
+      assert {:ok, doc} = Cosmos.File.get_edge(id)
+      assert {:ok, pool} = Cosmos.decode_pool_doc(doc)
+
+      assert pool.key == @v2
+      assert pool.ids != []
 
       stored = stored_docs() |> Enum.map(& &1["id"]) |> MapSet.new()
-      assert Enum.all?(ids, &MapSet.member?(stored, &1))
+      assert Enum.all?(pool.ids, &MapSet.member?(stored, &1))
+    end
+
+    test "a release nobody loaded has no pool document" do
+      assert Cosmos.File.get_edge(Cosmos.pool_doc_id(@slug, "9.9.9")) == {:error, :not_found}
     end
   end
 
@@ -81,7 +106,7 @@ defmodule EdgeLinkouts.Cosmos.FileTest do
       start_supervised!({Cosmos.File, path: nil, name: name})
 
       assert Cosmos.File.get_edge("anything", name) == {:error, :not_found}
-      assert Cosmos.File.random_pool(name) == {:error, :not_found}
+      assert Cosmos.File.get_edge(Cosmos.pool_index_id(), name) == {:error, :not_found}
     end
   end
 

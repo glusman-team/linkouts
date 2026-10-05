@@ -10,24 +10,60 @@ web app re-encodes for KGX download.
 ## Cosmos document
 
 ```json
-{ "id": "575af3e8-8015-3718-be03-4da18a0bacfc", "b": "KLUv/QAMAdw…", "d": 1163284273 }
+{ "id": "575af3e8-8015-3718-be03-4da18a0bacfc", "b": "KLUv/QAMAdw…", "d": 1163284273, "k": "drugapprovals-kp" }
 ```
 
 - `id` — the edge UUID, taken verbatim from the KGX `id` field. It is also the partition
-  key (`/id`) and the only indexed path, so this document is reachable by exactly one point
-  read and nothing else is queryable.
+  key (`/id`) and the only path a read ever uses, so this document is reachable by exactly
+  one point read and nothing else is queryable.
 - `b` — base64 (standard alphabet, padded) of one zstd frame holding the blob JSON below.
 - `d` — dictionary id the frame was compressed with; **omitted when 0** (no dictionary).
   Present so a reader holding the wrong dictionary fails loudly instead of returning
   garbage. Dictionaries are trained by the CLI and committed at `web/priv/zstd/edges.dict`.
+- `k` — the slug of the knowledge graph this edge belongs to: the canonical name with its
+  `infores:` prefix dropped (`infores:drugapprovals-kp` → `drugapprovals-kp`). One short
+  field per document, outside the frame, so "which graph is this?" is answerable without
+  decompressing anything, and so the same slug can be used for URLs and pool ids.
+  **Omitted when empty**, which is what every document written before this field existed
+  looks like: an old reader never sees a field it cannot interpret, and a new reader treats
+  an absent `k` as "unattributed" rather than as a graph named `""`.
 
 Deviation from PLAN.md's `{id, b}` sketch: the `d` field is added. A blob compressed
 against a trained dictionary cannot be decoded without it, and there is no other place to
-record which dictionary was in force when the document was written.
+record which dictionary was in force when the document was written. The `k` field is added
+for the same reason: the identity of the graph an edge came from is not recoverable from
+the blob without decoding it, and the version key inside the frame is a string that has to
+be parsed to get there.
 
-One reserved document id, `__random_pool__`, holds the reservoir-sampled UUID list that
-backs `/random` (indexing is off, so a random-document query would be a cross-partition
-scan). It uses the same envelope with `b` holding `{"schema":"edgelinkouts.pool/1", ...}`.
+## Reserved documents
+
+Indexing is off, so anything that would need a query has to be a document that can be
+point-read instead. Three reserved ids do that for `/random`; all of them use the same
+envelope as an edge, with `b` holding JSON rather than a blob.
+
+- `__random_pool__` — the **pool index**, `{"schema":"edgelinkouts.pool_index/1", "kgs":
+  {"drugapprovals-kp": {"versions": {"1.16.0": {"edges": 129807, "sampled": 1024,
+  "sampled_at": "2026-02-19T14:29:44Z"}}}}}`. Counts and no ids: which graphs exist, which
+  releases each one has, how many edges each release holds and how many were sampled. One
+  point read of this document is what the root page lists and what a weighted random pick
+  runs on. Size grows with releases, not with edges.
+- `__random_pool__:<slug>:<version>` — one release's **pool**,
+  `{"schema":"edgelinkouts.pool/1", "key":"infores:drugapprovals-kp-1.16.0",
+  "sampled_at":"…", "ids":["…", …]}`, the reservoir sample for that release alone. Ids are
+  plain hex UUID strings. Binary and delta-varint packings were both measured on a 1024-id
+  pool: packed-then-compressed is *larger* than hex-then-compressed (36,896 B vs 30,902 B),
+  because zstd already removes the repetition that packing removes, and it loses what makes
+  the document readable in the portal. The storage lever for a pool is the sample cap
+  (`--sample-size`), not the encoding of one id.
+
+A reserved id can never collide with an edge id: an edge id is a UUID, and every reserved id
+starts with `__random_pool__` (`cosmos.IsReservedID` in Go, `Cosmos.reserved_id?/1` in
+Elixir apply the same rule).
+
+Superseded: a single flat `{"ids":[…]}` list at `__random_pool__` backed `/random` before
+per-release pools existed. A document in that old shape is refused by schema, not
+mis-decoded; the load that writes an index is the migration, and `linkouts purge --all`
+followed by a reload is the explicit one.
 
 ## Blob JSON (inside the frame)
 
@@ -35,9 +71,9 @@ scan). It uses the same envelope with `b` holding `{"schema":"edgelinkouts.pool/
 {
   "schema": "edgelinkouts.blob/1",
   "versions": {
-    "drug-approvals-kg-1.11.2": { "id": "…", "subject": "CHEBI:64019", "predicate": "biolink:treats" },
-    "drug-approvals-kg-1.12.0": {
-      "$t": "drug-approvals-kg-1.11.2",
+    "infores:drugapprovals-kp-1.11.2": { "id": "…", "subject": "CHEBI:64019", "predicate": "biolink:treats" },
+    "infores:drugapprovals-kp-1.12.0": {
+      "$t": "infores:drugapprovals-kp-1.11.2",
       "$set": { "clinical_approval_status": "approved_for_condition" },
       "$add": { "publications": ["PMID:40123456"] },
       "$del": ["number_of_cases"]
@@ -50,8 +86,13 @@ Deviation from PLAN.md: the version map is wrapped in an envelope carrying `sche
 reader can refuse a format it does not implement rather than mis-decoding one. A reader
 must reject any `schema` it does not know exactly.
 
-Version keys are `<kg>-<version>` (`multiomics-kg-1.12.0`), opaque strings. Ordering for the
-UI is the KG's own release order, not lexicographic.
+Version keys are `<kg>-<version>`, opaque strings. The canonical `<kg>` is the infores the
+graph is registered under — `infores:drugapprovals-kp-1.16.0`, not `drug-approvals-kg-1.16.0`
+— because the registry name is the identifier a curator can check and the one every other
+Translator tool uses. Its **slug** (the name without the `infores:` prefix) is what the `k`
+field stores, what a URL carries (`/drugapprovals-kp/random`) and what a pool id is built
+from: `infores:` is a registry scheme, and a colon in a path segment or a document id buys
+nothing. Ordering for the UI is the KG's own release order, not lexicographic.
 
 ### Two payload shapes
 

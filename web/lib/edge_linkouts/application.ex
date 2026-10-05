@@ -12,9 +12,10 @@ defmodule EdgeLinkouts.Application do
         {Phoenix.PubSub, name: EdgeLinkouts.PubSub},
         # One connection pool for Cosmos point reads (see EdgeLinkouts.Cosmos.Finch).
         {Finch, name: EdgeLinkouts.Cosmos.Finch, pools: %{:default => [size: 16, count: 1]}},
-        # Read path support: file backend (dev), RU budget, in-flight read coalescing.
+        # Read path support: file backend (dev), RU budget, result cache, in-flight read coalescing.
         EdgeLinkouts.Cosmos.File,
         EdgeLinkouts.RateLimiter,
+        EdgeLinkouts.Cache,
         EdgeLinkouts.Dedupe,
         # Start to serve requests, typically the last entry
         EdgeLinkoutsWeb.Endpoint

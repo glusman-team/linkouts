@@ -25,6 +25,10 @@ var (
 	ErrPreconditionFailed = errors.New("etag precondition failed")
 	// ErrThrottled is a 429 that survived the SDK's own retries.
 	ErrThrottled = errors.New("request throttled")
+	// ErrScanUnsupported means the backend cannot enumerate its documents. Cosmos serves a scan
+	// out of the index, and this container's indexing policy is none, so there is nothing to
+	// scan with. Callers that need every document must use DropAll (and reload) instead.
+	ErrScanUnsupported = errors.New("backend cannot scan documents")
 )
 
 // Doc is one Cosmos document: an edge UUID and every version of that edge, compressed into
@@ -33,14 +37,73 @@ type Doc struct {
 	ID     string `json:"id"`
 	Blob   string `json:"b"`
 	DictID uint32 `json:"d,omitempty"`
+	// KG is the slug of the knowledge graph that first stored this edge ("drugapprovals-kp" for
+	// infores:drugapprovals-kp). No read path needs it — a filter against an unindexed container
+	// would be a full scan, and the blob's version keys already carry the KG — so it is metadata:
+	// it makes a document self-describing in Data Explorer and in an NDJSON file, and it is the
+	// field an index would be added to if a query ever became worth its RU.
+	//
+	// A blob can hold versions of two KGs when both assert the same edge UUID. The first writer's
+	// slug stays, because a document that says which graph created it is more useful than one that
+	// says which graph touched it last.
+	KG string `json:"k,omitempty"`
 	// ETag is service state, never part of the stored JSON.
 	ETag string `json:"-"`
 }
 
-// RandomPoolID is the reserved document id holding the reservoir-sampled UUIDs that back
-// /random. Indexing is off on this container, so a random query would be a full scan; the
-// CLI samples once per load and the app point-reads the result.
+// RandomPoolID is the reserved document id of the pool index: which knowledge graphs and which
+// releases have a random pool, and how big each one is. Indexing is off on this container, so a
+// random pick would be a full scan; the CLI samples once per load and the app point-reads the
+// result. The ids themselves live one document per release, at PoolDocID.
 const RandomPoolID = "__random_pool__"
+
+// PoolDocID is the reserved id of one release's sampled edge ids, e.g.
+// "__random_pool__:drugapprovals-kp:1.16.0". One document per (kg, version) rather than one big
+// document keeps every random a small point read: Cosmos charges a read by item size, so a
+// single pool holding every release would make the cheapest random cost as much as the most
+// expensive one, and would grow with every release.
+//
+// slug must not contain a colon (version.Slug drops the infores prefix) and version labels never
+// do, so the id splits unambiguously at its last colon.
+func PoolDocID(slug, version string) string {
+	return RandomPoolID + ":" + slug + ":" + version
+}
+
+// SplitPoolDocID is the inverse of PoolDocID. ok is false for any id that is not a pool document,
+// including the pool index itself.
+func SplitPoolDocID(id string) (slug, version string, ok bool) {
+	rest, found := strings.CutPrefix(id, RandomPoolID+":")
+	if !found {
+		return "", "", false
+	}
+	// Split at the last colon, not the first: a KG name that somehow kept a colon would
+	// otherwise be truncated and the version mis-parsed.
+	i := strings.LastIndex(rest, ":")
+	if i <= 0 || i == len(rest)-1 {
+		return "", "", false
+	}
+	return rest[:i], rest[i+1:], true
+}
+
+// IsReservedID reports whether an id belongs to the app rather than to an edge: the pool index
+// and the per-release pool documents. `linkouts status` uses it to count edge documents without
+// scanning, and purge uses it to leave the reserved documents out of an edge-only wipe.
+func IsReservedID(id string) bool { return strings.HasPrefix(id, RandomPoolID) }
+
+// StoreStats is what a backend can report about itself cheaply, without reading every document.
+type StoreStats struct {
+	// Items is the document count when the backend knows it for free. Negative means unknown.
+	Items int
+	// Usage and Quota are the service's x-ms-resource-usage / x-ms-resource-quota headers
+	// verbatim ("documents=123;collections=1;partitionKeyRanges=4;"). Empty for backends that
+	// have no such headers, which is every backend except Cosmos.
+	Usage string
+	Quota string
+	// Container describes the backend's own configuration, when it has one worth reporting.
+	// For Cosmos that is the partition key and the indexing policy — the two settings that make
+	// every read in this system a point read, and the ones a portal check should confirm.
+	Container string
+}
 
 // Store is the read/write surface the pipeline and the web app share.
 type Store interface {
@@ -55,6 +118,16 @@ type Store interface {
 	Replace(ctx context.Context, d Doc, etag string) error
 	// Provision creates the database and container if they are missing. It is idempotent.
 	Provision(ctx context.Context) error
+	// Delete removes one document by id, returning ErrNotFound when it is absent.
+	Delete(ctx context.Context, id string) error
+	// All streams every stored document to fn, stopping at the first error it returns. It is a
+	// scan, so a Cosmos container with indexing off answers ErrScanUnsupported.
+	All(ctx context.Context, fn func(Doc) error) error
+	// DropAll removes every document at once. On Cosmos it drops and re-creates the container,
+	// which is immediate and costs no RU; a file store truncates its file.
+	DropAll(ctx context.Context) error
+	// Stats reports cheap container facts for `linkouts status`.
+	Stats(ctx context.Context) (StoreStats, error)
 	// Name identifies the backend in logs and in --store output.
 	Name() string
 	// Close releases resources.

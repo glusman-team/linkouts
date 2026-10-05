@@ -28,9 +28,6 @@ defmodule EdgeLinkouts.Cosmos.Fake do
   @impl true
   def get_edge(id, server \\ __MODULE__), do: GenServer.call(server, {:get_edge, id})
 
-  @impl true
-  def random_pool(server \\ __MODULE__), do: GenServer.call(server, :random_pool)
-
   # ---------------------------------------------------------------- test controls
 
   @doc "Seeds stored document(s): a single stored map or a list of them."
@@ -38,19 +35,50 @@ defmodule EdgeLinkouts.Cosmos.Fake do
   def seed(docs, server \\ __MODULE__), do: GenServer.call(server, {:seed, List.wrap(docs)})
 
   @doc """
-  Seeds the reserved `__random_pool__` document with the given ids, encoded exactly as the
-  CLI writes it (pool JSON, zstd, base64), so `random_pool/0` exercises the real decode.
+  Seeds one release's random pool, encoded exactly as the CLI writes it (pool JSON, zstd,
+  base64), so a `/random` test exercises the real decode rather than a stubbed id list.
   """
-  @spec seed_pool([String.t()], GenServer.name()) :: :ok
-  def seed_pool(ids, server \\ __MODULE__) do
-    b64 =
-      %{"schema" => "edgelinkouts.pool/1", "ids" => ids}
-      |> JSON.encode!()
-      |> :zstd.compress()
-      |> IO.iodata_to_binary()
-      |> Base.encode64()
+  @spec seed_pool([String.t()], String.t(), String.t(), GenServer.name()) :: :ok
+  def seed_pool(ids, slug, version_label, server \\ __MODULE__) do
+    payload = %{
+      "schema" => "edgelinkouts.pool/1",
+      "key" => "infores:" <> slug <> "-" <> version_label,
+      "ids" => ids
+    }
 
-    seed(%{"id" => Cosmos.reserved_pool_id(), "b" => b64}, server)
+    seed(%{"id" => Cosmos.pool_doc_id(slug, version_label), "b" => encode(payload)}, server)
+  end
+
+  @doc """
+  Seeds the pool index from `%{slug => %{version_label => edge_count}}`.
+
+  A release's sampled count defaults to its edge count and its timestamp to nil, which is the
+  shape a test cares about: which graphs and releases exist, and how they are weighted.
+  """
+  @spec seed_pool_index(%{String.t() => %{String.t() => non_neg_integer()}}, GenServer.name()) ::
+          :ok
+  def seed_pool_index(kgs, server \\ __MODULE__) do
+    versions =
+      for {slug, releases} <- kgs, into: %{} do
+        {slug,
+         %{
+           "versions" =>
+             for {label, edges} <- releases, into: %{} do
+               {label, %{"edges" => edges, "sampled" => edges}}
+             end
+         }}
+      end
+
+    payload = %{"schema" => "edgelinkouts.pool_index/1", "kgs" => versions}
+    seed(%{"id" => Cosmos.pool_index_id(), "b" => encode(payload)}, server)
+  end
+
+  defp encode(payload) do
+    payload
+    |> JSON.encode!()
+    |> :zstd.compress()
+    |> IO.iodata_to_binary()
+    |> Base.encode64()
   end
 
   @doc "Programs the next call to fail with `{:error, reason}`. Call again to queue more."
@@ -63,8 +91,8 @@ defmodule EdgeLinkouts.Cosmos.Fake do
   @spec set_latency(non_neg_integer(), GenServer.name()) :: :ok
   def set_latency(ms, server \\ __MODULE__), do: GenServer.call(server, {:set_latency, ms})
 
-  @doc "Calls so far, oldest first: `{:get_edge, id}` and `:random_pool` entries."
-  @spec calls(GenServer.name()) :: [{:get_edge, String.t()} | :random_pool]
+  @doc "Calls so far, oldest first: one `{:get_edge, id}` entry per point read."
+  @spec calls(GenServer.name()) :: [{:get_edge, String.t()}]
   def calls(server \\ __MODULE__), do: GenServer.call(server, :calls)
 
   @doc "Clears documents, queued errors, latency and the call log."
@@ -82,18 +110,6 @@ defmodule EdgeLinkouts.Cosmos.Fake do
       run({:get_edge, id}, state, fn docs ->
         case Map.fetch(docs, id) do
           {:ok, doc} -> {:ok, doc}
-          :error -> {:error, :not_found}
-        end
-      end)
-
-    {:reply, reply, state}
-  end
-
-  def handle_call(:random_pool, _from, state) do
-    {reply, state} =
-      run(:random_pool, state, fn docs ->
-        case Map.fetch(docs, Cosmos.reserved_pool_id()) do
-          {:ok, doc} -> Cosmos.decode_pool_doc(doc)
           :error -> {:error, :not_found}
         end
       end)

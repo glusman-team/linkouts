@@ -14,6 +14,44 @@ defmodule EdgeLinkouts.Cosmos.HTTPTest do
          "oSxLzR4y+O/0H/t4bQtVNw=="
        ])
 
+  describe "the two resource-link forms" do
+    # A reserved pool id carries colons, so the URL form and the signature form genuinely differ.
+    # Signing the escaped form rejected exactly those documents with a 401 while UUID ids kept
+    # working, so this pins both forms: the URL escapes, the signature does not.
+    test "a colon-bearing id is escaped in the URL and raw in the signature" do
+      cfg = %{db: "edge_linkouts", container: "edges"}
+      id = "__random_pool__:drugapprovals-kp:1.16.0"
+
+      {url_link, signed_link} = HTTP.doc_links(cfg, id)
+
+      assert url_link ==
+               "dbs/edge_linkouts/colls/edges/docs/__random_pool__%3Adrugapprovals-kp%3A1.16.0"
+
+      assert signed_link ==
+               "dbs/edge_linkouts/colls/edges/docs/__random_pool__:drugapprovals-kp:1.16.0"
+    end
+
+    test "a UUID id has one form, because there is nothing to escape" do
+      cfg = %{db: "edge_linkouts", container: "edges"}
+      id = "575af3e8-8015-3718-be03-4da18a0bacfc"
+
+      assert {url_link, signed_link} = HTTP.doc_links(cfg, id)
+      assert url_link == signed_link
+    end
+
+    test "the two forms sign differently, which is the whole point" do
+      cfg = %{db: "edge_linkouts", container: "edges"}
+      id = "__random_pool__:drugapprovals-kp:1.16.0"
+      {url_link, signed_link} = HTTP.doc_links(cfg, id)
+      date = "Thu, 27 Apr 2017 00:51:12 GMT"
+
+      from_url = HTTP.authorization("get", "docs", url_link, date, @key)
+      from_signed = HTTP.authorization("get", "docs", signed_link, date, @key)
+
+      refute from_url == from_signed
+    end
+  end
+
   describe "master-key signing" do
     test "reproduces the ADR 0002 known-answer vector" do
       expected =
