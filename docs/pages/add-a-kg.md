@@ -25,8 +25,15 @@ Open the file and change three things.
 **The name.** This must equal the `<name>` part of the key you load with, in its canonical
 infores form. For a load of `infores:my-kp-1.0.0`, use `name: "infores:my-kp"`. The name without
 the prefix is its **slug** (`my-kp`): that is what the stored documents carry, what the root page
-shows a row for, and what a URL uses (`/my-kp/random`). A page whose KG name has no config falls
-back to a generic view, and its slug still works in a URL.
+shows a row for, and what a URL uses (`/my-kp/random`). A page whose KG name has no config still
+renders through the default config (see [The default config](the-default-config.md)), and its
+slug still works in a URL.
+
+**The base.** Add `extends: "default"` so your config inherits everything generic — names,
+categories, provenance, the qualifier stack, the sources sentence — and states only what is
+specific to your KG. Slots you declare replace the default's slots by name; slots you leave
+alone are inherited. See [The default config](the-default-config.md) for the full merge rules
+and a slot reference.
 
 **The sentence.** The starter's `edge:` reads "X predicate Y". Most KGs want the wording to
 depend on the predicate:
@@ -83,4 +90,5 @@ is why that config's alias has no version range.
 ## Worked example
 
 `kgs/drug_approvals.exs` is the most complete config and is tested against real stored documents.
-Read it next to the [config reference](config-reference.md).
+`kgs/_default.exs` is everything it inherits, documented in [The default config](the-default-config.md).
+Read both next to the [config reference](config-reference.md).

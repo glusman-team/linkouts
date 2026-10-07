@@ -1,4 +1,4 @@
-<Layouts.app flash={@flash} kg_slug={@kg_slug}>
+<Layouts.app flash={@flash} kg_slug={@kg_slug} random_version={@random_version}>
   <%= case @view do %>
     <% :ok -> %>
       <article class="edge-page">
@@ -10,7 +10,7 @@
             <a
               :if={@kg_slug}
               class="kg-link"
-              href={~p"/#{@kg_slug}/random"}
+              href={~p"/#{@kg_slug}/random?version=#{@random_version}"}
               title={"A random relationship from #{@kg_name}"}
             >{@kg_name}</a>
             <span :if={!@kg_slug}>{@kg_name}</span>
@@ -57,6 +57,16 @@
         </header>
 
         <div id="edge-detail" aria-live="polite" class="edge-body">
+          <%!-- A release the config flags with a known error renders a notice: the free-text
+               description is the KG curator's own words about what is wrong. --%>
+          <p :if={@known_error} class="edge-known-error" role="note">
+            <.icon
+              name="hero-exclamation-triangle"
+              class="size-4 inline-block shrink-0 align-[-0.125em] mr-1 text-warning"
+            />
+            <strong>Known issue in release {version_label(@key)}.</strong>
+            {@known_error.description}
+          </p>
           <%!-- The claim and its evidence, as on the legacy page: the sentence first, the
                evidence lines directly beneath it, both before anything a reader might have to
                scroll for. --%>
@@ -71,6 +81,10 @@
 
             <p :if={@evidence != []} class="edge-evidence">
               <EdgeComponents.segments segments={@evidence} />
+            </p>
+
+            <p :if={@footnote != []} class="edge-footnote">
+              <EdgeComponents.segments segments={@footnote} />
             </p>
           </div>
 

@@ -186,7 +186,7 @@ defmodule EdgeLinkoutsWeb.RandomControllerTest do
       conn = get(conn, ~p"/#{@slug}/random?version=9.9.9")
 
       html = html_response(conn, 404)
-      assert html =~ "Drug Approvals KP"
+      assert html =~ "DrugApprovals KP"
       assert html =~ "9.9.9"
     end
 

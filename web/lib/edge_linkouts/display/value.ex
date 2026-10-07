@@ -13,6 +13,7 @@ defmodule EdgeLinkouts.Display.Value do
       {:field, :name}                            one document field, as text
       {:link, :name_field, :curie_field}         a CURIE linkout (label + href)
       {:list, inner, separator}                  each element of a list field, joined
+      {:list, inner, separator, max, "and"}      capped, conjunct list ("A and B" / "A, B, and C")
       {:pick, :field, %{value => spec, default: spec}}
                                                  choose a spec by field value
       {:url, "https://…{field}", label}          a link whose URL is built from fields
@@ -20,6 +21,14 @@ defmodule EdgeLinkouts.Display.Value do
       {:humanize, :field}                        "biolink:correlated_with" -> "correlated with"
       {:count, :field}                           the length of a list
       {:default, :field, fallback}               fallback when the field is absent or empty
+      {:or_query, name, original_name}           a Lucene OR group of every name a source
+                                                 used for the concept: the preferred name
+                                                 plus each pipe-delimited original, quoted
+      {:supporting, key, prefix, suffix, rewordings, fallback}
+                                                 text from a supporting_text "key: value"
+                                                 entry, framed as "prefix + value + suffix";
+                                                 rewordings swaps the value for a keyed
+                                                 replacement (keys downcased)
       {:if, conditions, then_spec, else_spec}    conditional inclusion
 
   Conditions: `{:present, :field}`, `{:eq, :field, value}`, `{:matches, :field, "regex"}`,
@@ -37,6 +46,8 @@ defmodule EdgeLinkouts.Display.Value do
           | {:field, atom() | String.t()}
           | {:link, atom() | String.t(), atom() | String.t()}
           | {:list, atom() | String.t(), spec(), String.t()}
+          | {:list, atom() | String.t(), spec(), String.t(), pos_integer()}
+          | {:list, atom() | String.t(), spec(), String.t(), pos_integer(), String.t()}
           | {:pick, atom() | String.t(),
              %{optional(String.t()) => spec(), optional(:default) => spec()}}
           | {:url, String.t(), spec()}
@@ -44,8 +55,13 @@ defmodule EdgeLinkouts.Display.Value do
           | {:humanize, atom() | String.t()}
           | {:count, atom() | String.t()}
           | {:default, atom() | String.t(), spec()}
+          | {:or_query, atom() | String.t(), atom() | String.t()}
+          | {:supporting, String.t(), String.t(), String.t(),
+             %{optional(String.t()) => String.t()}, spec()}
           | {:if, [condition()], spec(), spec() | nil}
           | {:if, [condition()], spec()}
+          | {:fold, String.t(), spec()}
+          | {:strong, spec()}
 
   @type condition ::
           {:present, atom() | String.t()}
@@ -104,14 +120,42 @@ defmodule EdgeLinkouts.Display.Value do
   end
 
   def render({:list, name, inner, separator}, ctx),
-    do: render_list(name, inner, separator, nil, ctx)
+    do: render_list(name, inner, separator, nil, nil, ctx)
 
   # The 5-tuple caps the inline run: the first `max` rendered items stay in the sentence, the
   # rest fold into one {:more} segment the page turns into a "show N more" disclosure. Twenty
   # SPL set ids printed inline turn a paragraph into a wall of UUIDs; three read, the rest are
   # one click away.
   def render({:list, name, inner, separator, max}, ctx) when is_integer(max) and max > 0,
-    do: render_list(name, inner, separator, max, ctx)
+    do: render_list(name, inner, separator, max, nil, ctx)
+
+  # The 6-tuple adds a conjunction for prose lists: "A and B" for two items, "A, B, and C"
+  # for more (Oxford comma). A fold suppresses it — the button would sit where the
+  # conjunction belongs, and "A, B, [Show 2 more] and C" reads worse than plain commas.
+  def render({:list, name, inner, separator, max, conjunction}, ctx)
+      when is_integer(max) and max > 0 and is_binary(conjunction),
+      do: render_list(name, inner, separator, max, conjunction, ctx)
+
+  # {:strong, inner}: emphasis — rendered louder than the surrounding prose. Used for the
+  # primary knowledge source in a source list, where bold carries the distinction a
+  # "(primary)" parenthetical used to spell out. An empty inner means no emphasis.
+  def render({:strong, inner}, ctx) do
+    case render(inner, ctx) do
+      [] -> []
+      rendered -> [{:strong, rendered}]
+    end
+  end
+
+  # {:fold, label, inner}: like a capped list's fold, but for a single fact the sentence is
+  # better off without — a node's CURIE, which identifies but does not advance the claim. The
+  # chip is named for what it holds ("curie"), not a count; expanding reveals the inner spec
+  # in place. An inner render of nothing means no chip at all.
+  def render({:fold, label, inner}, ctx) when is_binary(label) do
+    case render(inner, ctx) do
+      [] -> []
+      rendered -> [{:fold, label, Segment.join([Segment.text(" ") | List.wrap(rendered)])}]
+    end
+  end
 
   def render({:pick, name, branches}, ctx) do
     case fetch(ctx, name) do
@@ -177,6 +221,39 @@ defmodule EdgeLinkouts.Display.Value do
     end
   end
 
+  # DAKP logs how every assertion was read into the supporting_text list as "key: value"
+  # entries; each qualifier carries its readable source phrase under original_{qualifier}
+  # ("breast", "pediatric patients", "daily"). Pipe-separated alternates keep the first —
+  # the canonical read, the same convention original_subject/original_object use. A rewording
+  # map lets the curator repair values that read as fragments in a sentence ("adult" becomes
+  # "adults", "7 days" becomes "for 7 days") without touching the stored data; keys are
+  # downcased and matched case-insensitively. When the entry is absent the fallback renders,
+  # so older blobs fall back to the labelled CURIE.
+  def render({:supporting, key, prefix, suffix, rewordings, fallback}, ctx) do
+    case supporting_value(ctx.doc, key) do
+      nil ->
+        render(fallback, ctx)
+
+      value ->
+        reworded = Map.get(rewordings, String.downcase(value), value)
+        [Segment.text(prefix <> reworded <> suffix)]
+    end
+  end
+
+  # DailyMed's query box takes Lucene boolean syntax, so a search can reach every name the
+  # source used for a concept: the preferred name plus each pipe-delimited original (the
+  # same convention original_subject/original_object use), each a quoted phrase, joined with
+  # OR. Deduplication is case-insensitive because dumps routinely carry "Pain" and "PAIN";
+  # the first spelling wins, which keeps the preferred name's casing when it survives.
+  def render({:or_query, name, original_name}, ctx) do
+    terms = query_terms([fetch(ctx, name), fetch(ctx, original_name)])
+
+    terms
+    |> Enum.map_join(" OR ", &~s("#{&1}"))
+    |> Segment.text()
+    |> List.wrap()
+  end
+
   # A link whose URL is built from document fields: {:url, "https://…?query={subject_name}", label}.
   # Field values are percent-encoded, so a drug name with a space or an ampersand cannot break the
   # query or smuggle a parameter.
@@ -216,13 +293,14 @@ defmodule EdgeLinkouts.Display.Value do
     unsupported value spec: #{inspect(other)}
 
     Valid forms are a template string, {:field, name}, {:link, label_field, curie_field},
-    {:list, name, inner, separator} or {:list, name, inner, separator, max}, {:pick, name,
-    branches}, {:local, name} and {:if, conditions, then, else}.
+    {:list, name, inner, separator}, {:list, name, inner, separator, max}, {:list, name,
+    inner, separator, max, conjunction}, {:fold, label, inner}, {:strong, inner}, {:pick,
+    name, branches}, {:local, name} and {:if, conditions, then, else}.
     `mix linkouts.check` reports this at build time rather than on a page view.
     """
   end
 
-  defp render_list(name, inner, separator, max, ctx) do
+  defp render_list(name, inner, separator, max, conjunction, ctx) do
     case fetch(ctx, name) do
       values when is_list(values) and values != [] ->
         rendered =
@@ -234,7 +312,7 @@ defmodule EdgeLinkouts.Display.Value do
           if max && length(rendered) > max, do: Enum.split(rendered, max), else: {rendered, []}
 
         shown
-        |> interleave(Segment.text(separator))
+        |> interleave_with(separator, conjunction, hidden)
         |> Kernel.++(more_segment(hidden, separator))
         |> Segment.join()
 
@@ -242,6 +320,20 @@ defmodule EdgeLinkouts.Display.Value do
         []
     end
   end
+
+  # A conjunction turns the comma run into prose: "KP and DailyMed" for two items, with the
+  # Oxford comma from three up. Anything folded (or no conjunction) keeps plain separators.
+  defp interleave_with(items, separator, conjunction, hidden)
+
+  defp interleave_with(items, separator, conjunction, [])
+       when is_binary(conjunction) and length(items) > 1 do
+    {last, rest} = List.pop_at(items, -1)
+    last_join = if length(rest) > 1, do: "#{separator}#{conjunction} ", else: " #{conjunction} "
+    Enum.intersperse(rest, Segment.text(separator)) ++ [Segment.text(last_join), last]
+  end
+
+  defp interleave_with(items, separator, _conjunction, _hidden),
+    do: interleave(items, Segment.text(separator))
 
   # The fold carries the leading separator so a flattened read (plain text, link extraction)
   # restores the exact sequence the open disclosure shows.
@@ -261,6 +353,49 @@ defmodule EdgeLinkouts.Display.Value do
   defp render_element(element, inner, ctx) do
     doc = if is_map(element), do: element, else: %{"__self__" => element}
     render(inner, %{ctx | doc: doc})
+  end
+
+  # Finds the value of a supporting_text "key: value" entry. The entry format is the
+  # pipeline's log line, so the key is everything before the first colon and the value is
+  # everything after it, trimmed. An empty value counts as absent: the fallback must win,
+  # or a sentence would carry a dangling frame like ", in the ".
+  defp supporting_value(doc, key) do
+    doc
+    |> Map.get("supporting_text")
+    |> supporting_entries()
+    |> Enum.find_value(fn entry ->
+      case String.split(entry, ":", parts: 2) do
+        [entry_key, value] when entry_key == key ->
+          value
+          |> String.split("|")
+          |> List.first()
+          |> String.trim()
+          |> case do
+            "" -> nil
+            trimmed -> trimmed
+          end
+
+        _ ->
+          nil
+      end
+    end)
+  end
+
+  defp supporting_entries(entries) when is_binary(entries), do: [entries]
+  defp supporting_entries(entries) when is_list(entries), do: Enum.filter(entries, &is_binary/1)
+  defp supporting_entries(_other), do: []
+
+  defp query_terms(fields) do
+    fields
+    |> Enum.flat_map(fn
+      value when is_binary(value) -> [value]
+      value when is_list(value) -> Enum.filter(value, &is_binary/1)
+      _ -> []
+    end)
+    |> Enum.flat_map(&String.split(&1, "|"))
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq_by(&String.downcase/1)
   end
 
   @doc "Evaluates every condition; an empty list is true."

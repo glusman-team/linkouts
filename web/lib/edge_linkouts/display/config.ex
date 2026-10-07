@@ -11,6 +11,9 @@ defmodule EdgeLinkouts.Display.Config do
   because the failure mode of a typo'd spec is otherwise a blank sentence in production: a
   `{:pick, ...}` naming a field the release renamed renders nothing, and nothing looks like
   missing data.
+
+  The key reference below is the schema; the guide "The default config" (`the-default-config.html`
+  under Guides) walks what the shared base renders, slot by slot, with worked examples.
   """
 
   alias EdgeLinkouts.Display.Version
@@ -23,9 +26,22 @@ defmodule EdgeLinkouts.Display.Config do
                 "The KGX name, as in `<name>-<version>` keys. Must match the key prefix the CLI loads."
             ],
             display_name: [
-              type: :string,
-              required: true,
-              doc: "Human name shown in the edge page header."
+              type: {:custom, __MODULE__, :validate_optional_string, []},
+              default: nil,
+              doc:
+                "Human name shown in the edge page header. Omitted by the default config, whose " <>
+                  "header names the graph from the stored version key instead."
+            ],
+            extends: [
+              type: {:custom, __MODULE__, :validate_optional_string, []},
+              default: nil,
+              doc: """
+              The base config this one builds on (only `"default"`, i.e. `kgs/_default.exs`).
+              The merge is per-section, the way Tablassert's table configs override sections:
+              `slots` merge per slot name (an override replaces one slot, inherits the rest),
+              `aliases` append, and every other key — templates, evidence, known_errors — is
+              replaced wholesale when present, inherited when not.
+              """
             ],
             url: [type: :string, doc: "Link to the knowledge source's own documentation."],
             description: [
@@ -74,6 +90,17 @@ defmodule EdgeLinkouts.Display.Config do
               diffing anything.
               """
             ],
+            known_errors: [
+              type: {:list, :map},
+              default: [],
+              doc: """
+              Known defects, each `%{description: text, versions: [requirement]}`: one issue
+              stated once, then every release it occurs in. Each entry of `versions` is a
+              version requirement in the `{:version, ...}` syntax (a bare `"1.16.0"` matches
+              exactly, `"<1.17.0"` a range); `description` is free text stating what is
+              wrong, shown verbatim on a notice when any of those releases is displayed.
+              """
+            ],
             evidence: [
               type: {:list, :map},
               default: [],
@@ -83,8 +110,25 @@ defmodule EdgeLinkouts.Display.Config do
               prose paragraph on the edge page — the legacy page printed the same facts as
               labelled lines; prose carries each fact's meaning without a field-name label.
               """
+            ],
+            footnote: [
+              type: :any,
+              doc: """
+              An optional trailing sentence rendered as its own paragraph beneath the evidence
+              paragraph — for helper text a reader acts on ("On DailyMed, search ...") rather
+              than a fact about the edge, which would dilute the evidence paragraph's argument.
+              """
             ]
           )
+
+  # NimbleOptions has no nullable string type, and it validates defaults too; display_name and
+  # extends are both omit-able strings.
+  @doc false
+  def validate_optional_string(value) when is_binary(value) or value == nil,
+    do: {:ok, value}
+
+  def validate_optional_string(value),
+    do: {:error, "expected a string or nil, got: #{inspect(value)}"}
 
   defstruct [
     :name,
@@ -98,7 +142,9 @@ defmodule EdgeLinkouts.Display.Config do
     :edge,
     :relationship,
     :latest_version,
+    :known_errors,
     :evidence,
+    :footnote,
     :file
   ]
 
@@ -123,7 +169,9 @@ defmodule EdgeLinkouts.Display.Config do
          :ok <- validate_spec(validated[:edge], "edge", file),
          :ok <- validate_optional_spec(validated[:title], "title", file),
          :ok <- validate_optional_spec(validated[:relationship], "relationship", file),
-         :ok <- validate_evidence(validated[:evidence], file) do
+         :ok <- validate_known_errors(validated[:known_errors] || [], file),
+         :ok <- validate_evidence(validated[:evidence], file),
+         :ok <- validate_optional_spec(validated[:footnote], "footnote", file) do
       {:ok, struct(__MODULE__, Map.put(validated, :file, file))}
     else
       {:error, %NimbleOptions.ValidationError{} = err} ->
@@ -174,6 +222,59 @@ defmodule EdgeLinkouts.Display.Config do
     if problems == [], do: :ok, else: {:error, problems}
   end
 
+  # One known issue names a defect once and lists every release where it occurs. A bad
+  # version requirement must fail here rather than silently matching nothing; an issue with
+  # no versions would match nothing, so it is a config bug too.
+  defp validate_known_errors(errors, file) do
+    problems =
+      for {%{} = error, index} <- Enum.with_index(errors),
+          problem <- error_problems(error, "known_errors[#{index}]"),
+          do: "#{file}: #{problem}"
+
+    if problems == [], do: :ok, else: {:error, problems}
+  end
+
+  defp error_problems(error, where) do
+    description = Map.get(error, :description)
+    versions = Map.get(error, :versions)
+
+    []
+    |> Kernel.++(
+      if is_binary(description) and description != "",
+        do: [],
+        else: ["#{where}: missing :description"]
+    )
+    |> Kernel.++(versions_problems(versions, where))
+  end
+
+  defp versions_problems(versions, where) when is_list(versions) do
+    if versions == [] do
+      ["#{where}: :versions must not be empty"]
+    else
+      for {version, index} <- Enum.with_index(versions),
+          problem <- version_requirement_problems(version, "#{where}.versions[#{index}]"),
+          do: problem
+    end
+  end
+
+  defp versions_problems(_other, where), do: ["#{where}: missing :versions"]
+
+  defp version_requirement_problems(version, where)
+       when is_binary(version) and version != "",
+       do: check_requirement(version, where)
+
+  defp version_requirement_problems(_version, where),
+    do: ["#{where}: version requirement must be a non-empty binary"]
+
+  defp check_requirement(version, where) when is_binary(version) and version != "" do
+    _ = Version.satisfies?("1.0.0", version)
+    []
+  rescue
+    e in ArgumentError -> ["#{where}: #{Exception.message(e)}"]
+  end
+
+  defp check_requirement(_, _where), do: []
+
   defp section_problems(section, where) do
     # Each section is one sentence of the evidence paragraph; a sentence must render something.
     required =
@@ -218,6 +319,17 @@ defmodule EdgeLinkouts.Display.Config do
     list_problems(name, inner, separator, max, where)
   end
 
+  def spec_problems({:list, name, inner, separator, max, conjunction}, where)
+      when is_integer(max) and max > 0 and is_binary(conjunction) do
+    list_problems(name, inner, separator, max, where)
+  end
+
+  def spec_problems({:list, _, _, _, _, _} = other, where) do
+    [
+      "#{where}: {:list, field, inner, separator, max, conjunction} expected, got #{inspect(other)}"
+    ]
+  end
+
   def spec_problems({:list, _, _, _, _} = other, where) do
     [
       "#{where}: {:list, field, inner, separator} or {:list, field, inner, separator, max} expected, got #{inspect(other)}"
@@ -226,6 +338,22 @@ defmodule EdgeLinkouts.Display.Config do
 
   def spec_problems({:list, other}, where),
     do: ["#{where}: {:list, name, inner, separator} expected, got #{inspect(other)}"]
+
+  def spec_problems({:fold, label, inner}, where) when is_binary(label) do
+    spec_problems(inner, "#{where}.inner")
+  end
+
+  def spec_problems({:fold, _, _} = other, where),
+    do: ["#{where}: {:fold, \"label\", inner} expected, got #{inspect(other)}"]
+
+  def spec_problems({:strong, inner}, _where) when is_binary(inner), do: []
+
+  # A nested spec (a bolded link, a bolded fold): recurse into it like {:fold} does.
+  def spec_problems({:strong, inner}, where) when is_tuple(inner) and tuple_size(inner) >= 2,
+    do: spec_problems(inner, "#{where}.inner")
+
+  def spec_problems({:strong, other}, where),
+    do: ["#{where}: {:strong, inner} expected, got #{inspect(other)}"]
 
   def spec_problems({:pick, name, branches}, where) when is_map(branches) do
     name_problems =
@@ -269,6 +397,24 @@ defmodule EdgeLinkouts.Display.Config do
 
   def spec_problems({:default, _, _} = other, where),
     do: ["#{where}: {:default, field, fallback} expected, got #{inspect(other)}"]
+
+  def spec_problems({:or_query, name, original_name}, _where)
+      when (is_binary(name) or is_atom(name)) and
+             (is_binary(original_name) or is_atom(original_name)),
+      do: []
+
+  def spec_problems({:or_query, _, _} = other, where),
+    do: ["#{where}: {:or_query, field, original_field} expected, got #{inspect(other)}"]
+
+  def spec_problems({:supporting, key, prefix, suffix, rewordings, fallback}, where)
+      when is_binary(key) and is_binary(prefix) and is_binary(suffix) and is_map(rewordings) do
+    spec_problems(fallback, "#{where}.fallback")
+  end
+
+  def spec_problems({:supporting, _, _, _, _, _} = other, where),
+    do: [
+      "#{where}: {:supporting, key, prefix, suffix, rewordings, fallback} expected, got #{inspect(other)}"
+    ]
 
   def spec_problems({:url, template, label}, where) when is_binary(template) do
     spec_problems(label, "#{where}.label")
@@ -441,7 +587,7 @@ defmodule EdgeLinkouts.Display.Config do
   """
   @spec referenced_names(t()) :: [String.t()]
   def referenced_names(%__MODULE__{} = config) do
-    ([config.edge, config.title] ++
+    ([config.edge, config.title, config.footnote] ++
        Enum.flat_map(config.evidence, &[Map.get(&1, :label), Map.get(&1, :value)]) ++
        Map.values(config.slots))
     |> Enum.flat_map(&collect_spec_slots/1)
@@ -462,7 +608,8 @@ defmodule EdgeLinkouts.Display.Config do
     referenced =
       referenced_slots(config.edge) ++
         referenced_slots(config.title) ++
-        referenced_slots(config.relationship)
+        referenced_slots(config.relationship) ++
+        referenced_slots(config.footnote)
 
     referenced =
       referenced ++
@@ -486,6 +633,7 @@ defmodule EdgeLinkouts.Display.Config do
 
   defp collect_spec_slots({:list, _name, inner, _sep}), do: collect_spec_slots(inner)
   defp collect_spec_slots({:list, _name, inner, _sep, _max}), do: collect_spec_slots(inner)
+  defp collect_spec_slots({:list, _name, inner, _sep, _max, _conj}), do: collect_spec_slots(inner)
 
   defp collect_spec_slots({:pick, _name, branches}) when is_map(branches) do
     Enum.flat_map(Map.values(branches), &collect_spec_slots/1)
@@ -496,6 +644,15 @@ defmodule EdgeLinkouts.Display.Config do
   end
 
   defp collect_spec_slots({:default, _name, fallback}), do: collect_spec_slots(fallback)
+  # An OR query reads document fields only; it references no slots.
+  defp collect_spec_slots({:or_query, _name, _original_name}), do: []
+  # A {:supporting} clause's framing is literal text; only its fallback can reference slots.
+  defp collect_spec_slots({:supporting, _key, _prefix, _suffix, fallback}),
+    do: collect_spec_slots(fallback)
+
+  # A fold's inner spec resolves against the same document as the sentence around it.
+  defp collect_spec_slots({:fold, _label, inner}), do: collect_spec_slots(inner)
+  defp collect_spec_slots({:strong, inner}), do: collect_spec_slots(inner)
   # The url template interpolates slots-then-fields just like a string template, so both count.
   defp collect_spec_slots({:url, template, label}),
     do: collect_spec_slots(template) ++ collect_spec_slots(label)

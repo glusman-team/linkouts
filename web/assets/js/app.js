@@ -62,7 +62,7 @@ document.addEventListener("click", (event) => {
   if (willOpen) {
     rest.removeAttribute("hidden")
     button.setAttribute("aria-expanded", "true")
-    button.textContent = "Show less"
+    button.textContent = button.dataset.less || "Show less"
   } else {
     rest.setAttribute("hidden", "")
     button.setAttribute("aria-expanded", "false")

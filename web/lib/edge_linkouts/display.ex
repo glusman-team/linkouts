@@ -8,9 +8,15 @@ defmodule EdgeLinkouts.Display do
 
   The output is always `[Segment.t()]`, never HTML: templates escape, so a value from an upstream
   KG cannot inject markup. See `EdgeLinkouts.Display.Segment`.
+
+  `kgs/_default.exs` renders any standard KGX document. It is the base a config extends with
+  `extends: "default"` (slots merge per slot name, aliases append, other keys replace the
+  base's wholesale) and the fallback for a stored KG with no config of its own. Its roles,
+  slot reference and worked examples are documented in the guide "The default config"
+  (`the-default-config.html` under Guides).
   """
 
-  alias EdgeLinkouts.Display.{Config, Segment, Value}
+  alias EdgeLinkouts.Display.{Config, Segment, Value, Version}
 
   # Three levels up from web/lib/edge_linkouts to the repo root, where kgs/ lives.
   # (Display.Prefixes needs four: it is one directory deeper.)
@@ -35,12 +41,48 @@ defmodule EdgeLinkouts.Display do
     end
   end
 
+  # The default config: `kgs/_default.exs`, an underscore-prefixed file so it stays out of
+  # @configs — it is infrastructure, not a KG name. It is the base any config can extend and
+  # the fallback for a stored KG that has no config of its own.
+  default_path = Path.join(@kgs_dir, "_default.exs")
+  default_raw = default_path |> Code.eval_file() |> elem(0)
+
+  {_default_name, {default_config, _default_relative}} =
+    load_config.(default_raw, Path.relative_to_cwd(default_path))
+
+  @default_config default_config
+
+  # Per-section override, the way Tablassert's table configs override sections: slots merge
+  # per slot name, aliases append, and every other key the override declares replaces the
+  # base's wholesale.
+  extend = fn base, override ->
+    Map.merge(base, override, fn
+      :slots, base_slots, override_slots -> Map.merge(base_slots, override_slots)
+      :aliases, base_aliases, override_aliases -> base_aliases ++ override_aliases
+      _key, _base, override -> override
+    end)
+  end
+
   @configs for path <- Path.wildcard(Path.join(@kgs_dir, "*.exs")),
                not String.starts_with?(Path.basename(path), "_"),
                raw = path |> Code.eval_file() |> elem(0),
+               extends = raw[:extends] || raw["extends"],
+               raw =
+                 (case extends do
+                    nil ->
+                      raw
+
+                    "default" ->
+                      extend.(default_raw, raw)
+
+                    other ->
+                      raise ArgumentError,
+                            "#{Path.relative_to_cwd(path)}: extends must be \"default\", got #{inspect(other)}"
+                  end),
                do: load_config.(raw, Path.relative_to_cwd(path))
 
   for {_name, {_config, path}} <- @configs, do: @external_resource(path)
+  @external_resource default_path
 
   @table Map.new(@configs)
 
@@ -127,9 +169,19 @@ defmodule EdgeLinkouts.Display do
   defp starts_numeric?(<<c, _::binary>>) when c in ?0..?9, do: true
   defp starts_numeric?(_), do: false
 
-  @doc "The config for a version key, or nil."
-  @spec for_key(String.t() | nil) :: t() | nil
-  def for_key(key), do: key |> name_of() |> get()
+  @doc """
+  The config for a version key, falling back to the default config.
+
+  A KG with a config of its own gets it; any other stored KG gets `kgs/_default.exs`, whose
+  generic KGX rendering handles the standard fields (names, predicate, categories, provenance,
+  sources) and degrades gracefully wherever a document lacks them.
+  """
+  @spec for_key(String.t() | nil) :: t()
+  def for_key(key), do: key |> name_of() |> get() |> Kernel.||(@default_config)
+
+  @doc "The fallback config for KGs with no config of their own."
+  @spec default() :: t()
+  def default, do: @default_config
 
   @doc "The build context for a resolved document at a version."
   @spec context(t(), map(), String.t()) :: Value.ctx()
@@ -199,10 +251,45 @@ defmodule EdgeLinkouts.Display do
   end
 
   @doc """
+  Renders the footnote line, when the config declares one.
+
+  Helper text a reader acts on rather than a fact about the edge: search links, resolver
+  hints. Rendered as its own paragraph beneath the evidence paragraph so it does not dilute
+  the evidence argument; an empty render (or no footnote) means no paragraph.
+  """
+  @spec footnote(t() | nil, map(), String.t()) :: [Segment.t()]
+  def footnote(nil, _doc, _version), do: []
+  def footnote(%Config{footnote: nil}, _doc, _version), do: []
+
+  def footnote(%Config{} = config, doc, version) do
+    Value.render(config.footnote, context(config, doc, version))
+  end
+
+  @doc """
+  The known-issue entry whose versions cover `version_or_key`, or nil.
+
+  Each entry states one defect and lists every release it occurs in (`versions`, a list of
+  requirements); it matches when any of them does. `version_or_key` may be a bare release
+  number ("1.16.0") or a full key ("infores:drugapprovals-kp-1.16.0"); requirements use the
+  same `{:version, ...}` syntax as conditions, so a bare "1.16.0" matches exactly and
+  "<1.17.0" matches a range.
+  """
+  @spec known_error(t() | nil, String.t() | nil) :: map() | nil
+  def known_error(nil, _version_or_key), do: nil
+  def known_error(%Config{known_errors: nil}, _version_or_key), do: nil
+
+  def known_error(%Config{} = config, version_or_key) do
+    Enum.find(config.known_errors, fn error ->
+      Enum.any?(error.versions, &Version.satisfies?(version_or_key, &1))
+    end)
+  end
+
+  @doc """
   The GitHub issue URL for correcting this edge, or nil without a configured repo.
 
   Carries the edge id and its permalink in the issue body so a correction is actionable without
-  the reporter having to describe what they were looking at.
+  the reporter having to describe what they were looking at. The repo's bug template structures
+  whatever the reporter adds on top.
   """
   @spec feedback_url(t() | nil, String.t(), String.t() | nil) :: String.t() | nil
   def feedback_url(%Config{feedback_repo: repo}, id, permalink) when is_binary(repo) do
@@ -212,7 +299,13 @@ defmodule EdgeLinkouts.Display do
     repo
     |> String.trim_trailing("/")
     |> Kernel.<>("/issues/new?")
-    |> Kernel.<>(URI.encode_query(%{"title" => title, "body" => body}))
+    |> Kernel.<>(
+      URI.encode_query(%{
+        "template" => "bug_report.md",
+        "title" => title,
+        "body" => body
+      })
+    )
   end
 
   def feedback_url(_config, _id, _permalink), do: nil

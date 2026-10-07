@@ -20,7 +20,9 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
   def mount(_params, _session, socket) do
     # The header's "Random edge" button is scoped to this edge's graph, which is not known
     # until a document has been read; nil keeps it global for every state without one.
-    {:ok, assign(socket, kg_slug: nil)}
+    # random_version pins it to the release being read, so random clicks stay in the version
+    # the reader is on until they switch versions; nil means the graph's every release.
+    {:ok, assign(socket, kg_slug: nil, random_version: nil)}
   end
 
   @impl true
@@ -98,11 +100,14 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
           doc: doc,
           kg_name: (config && config.display_name) || Codec.kg_name(key),
           kg_slug: Display.slug(Codec.kg_name(key)),
+          random_version: version_label(key),
           sentence: sentence(config, doc, key),
           relationship: relationship(config, doc, key),
           latest: latest?(config, key),
           latest_label: config && config.latest_version,
           evidence: evidence(config, doc, key),
+          footnote: footnote(config, doc, key),
+          known_error: known_error(config, key),
           diff: diff(blob, prev_key, doc),
           prev_key: prev_key,
           config: config,
@@ -136,6 +141,12 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
 
   defp evidence(nil, _doc, _key), do: []
   defp evidence(config, doc, key), do: Display.evidence(config, doc, key)
+
+  defp footnote(nil, _doc, _key), do: []
+  defp footnote(config, doc, key), do: Display.footnote(config, doc, key)
+
+  defp known_error(nil, _key), do: nil
+  defp known_error(config, key), do: Display.known_error(config, key)
 
   defp page_title(nil, _doc, key, _id), do: "Edge #{Codec.kg_name(key)}"
   defp page_title(config, doc, key, _id), do: Display.title(config, doc, key)

@@ -5,7 +5,8 @@ A config is a map with these keys:
 | key | required | what it is |
 |---|---|---|
 | `name` | yes | the `<name>` of the version keys this config renders |
-| `display_name` | yes | the human name, shown in the edge page header |
+| `extends` | | the base config this one builds on; only `"default"` is valid. See [The default config](the-default-config.md) |
+| `display_name` | | the human name, shown in the edge page header; when omitted the header names the graph from the stored version key |
 | `url` | | the knowledge source's own documentation |
 | `description` | | prose about the KG, shown in the edge page's about section |
 | `feedback_repo` | | GitHub repo whose issues take corrections for this KG |
@@ -98,6 +99,45 @@ The length of a list field.
 ### `{:default, name, fallback}`
 
 The field if present and non-empty, otherwise `fallback`, which is itself a spec.
+
+### `{:fold, label, inner}`
+
+`inner` collapsed into an expandable chip labelled `label` ("curie 1024"). A collapsed chip
+identifies without interrupting the sentence; expanding reveals `inner` in place. Nothing
+renders when `inner` renders nothing.
+
+### `{:strong, inner}`
+
+`inner` in bold.
+
+### `{:supporting, key, prefix, suffix, rewordings, fallback}`
+
+Text from a `supporting_text` entry. KGs log how an assertion was read as `"key: value"`
+strings (`"original_frequency_qualifier: daily dosage"`), so this form fetches `key`'s value
+and frames it as `prefix` + value + `suffix`. `rewordings` is a map of replacements applied
+to the value (keys downcased), for repairing fragments that read badly in prose:
+
+```elixir
+{:supporting, "original_frequency_qualifier", ", dosed ", "",
+ %{"dosage" => "at the labeled dosage"}, ", frequency {frequency_qualifier_link}"}
+```
+
+When the entry is absent the `fallback` renders, so a document from before the convention
+falls back to a labelled CURIE instead of printing an empty frame.
+
+### `{:or_query, name, original_name}`
+
+A Lucene OR group of every name a source used for a concept: the preferred field plus each
+pipe-delimited original, each a quoted phrase, deduplicated case-insensitively (first
+spelling wins). Built for `{:url, ...}` search templates:
+
+```elixir
+"subject_query" => {:or_query, "subject_name", "original_subject"},
+{:url, "https://dailymed.nlm.nih.gov/dailymed/search.cfm?query={subject_query}", "labels for {subject_name}"}
+```
+
+renders the query `"gamma-Hydroxybutyric acid" OR "sodium oxybate"` while the link text stays
+readable.
 
 ## Conditions
 

@@ -17,6 +17,12 @@ defmodule EdgeLinkouts.Display.Segment do
           # A fold: the list items a long {:list, ...} put behind a "show N more" disclosure.
           # The payload carries the leading separator, so flattening restores the paragraph.
           | {:more, [t()]}
+          # A labelled fold: one fact a reader rarely needs (a node's CURIE) behind a chip
+          # named for what it holds. Same payload convention as {:more, ...}.
+          | {:fold, String.t(), [t()]}
+          # Emphasis: rendered louder than the surrounding prose (the primary knowledge
+          # source inside a source list).
+          | {:strong, [t()]}
 
   @doc "A literal run of text."
   @spec text(String.t()) :: t()
@@ -75,6 +81,8 @@ defmodule EdgeLinkouts.Display.Segment do
   def flatten(segments) do
     Enum.flat_map(segments, fn
       {:more, inner} -> flatten(inner)
+      {:fold, _label, inner} -> flatten(inner)
+      {:strong, inner} -> flatten(inner)
       seg -> [seg]
     end)
   end

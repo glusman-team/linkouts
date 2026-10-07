@@ -41,3 +41,7 @@ erl_crash.dump
 
 # Project-local pi skills (third-party UI/UX skills, installed per checkout)
 /.pi/skills/
+
+# Local planning documents: working notes, not repo artifacts.
+/PLAN.md
+/plans/

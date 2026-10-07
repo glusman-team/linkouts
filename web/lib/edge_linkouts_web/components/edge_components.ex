@@ -63,6 +63,16 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
     ~H"{@text}"
   end
 
+  # Emphasis: the primary knowledge source inside a source list, where bold carries the
+  # distinction a "(primary)" parenthetical used to spell out.
+  defp segment(%{segment: {:strong, inner}} = assigns) do
+    assigns = assign(assigns, :inner, inner)
+
+    ~H"""
+    <strong class="linkout-strong"><.segments segments={@inner} note={@note} /></strong>
+    """
+  end
+
   defp segment(%{segment: {:link, href, label}} = assigns) do
     assigns = assign(assigns, href: href, label: label, host: host_of(href))
 
@@ -71,6 +81,28 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
       name="hero-arrow-top-right-on-square"
       class="ext-icon"
     /><span :if={@note} class="sr-only"> (opens {@host} in a new tab)</span></a>
+    """
+  end
+
+  # A labelled fold: one fact (a node's CURIE) behind a chip named for what it holds. Same
+  # inline reveal as the list fold below; the button's data-more is the chip label itself,
+  # so the toggle restores "curie", and data-less swaps it for "hide" while open.
+  defp segment(%{segment: {:fold, label, hidden}} = assigns) do
+    assigns = assign(assigns, hidden: hidden, label: label)
+
+    ~H"""
+    <span class="linkout-more linkout-fold">
+      <button
+        type="button"
+        class="linkout-more-btn"
+        aria-expanded="false"
+        data-more={@label}
+        data-less="hide"
+      >
+        {@label}
+      </button>
+      <span class="linkout-more-rest" hidden><.segments segments={@hidden} note={@note} /></span>
+    </span>
     """
   end
 

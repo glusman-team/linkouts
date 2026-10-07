@@ -48,6 +48,7 @@ defmodule EdgeLinkoutsDocs.MixProject do
           "pages/ingest.md",
           "pages/add-a-kg.md",
           "pages/config-reference.md",
+          "pages/the-default-config.md",
           "pages/storage-format.md",
           "pages/deployment.md"
         ] ++ cli_pages,

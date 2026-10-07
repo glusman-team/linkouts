@@ -137,15 +137,31 @@ code, kbd, pre {
 
 /* --- shell ------------------------------------------------------------------- */
 
+/* The research-use disclaimer is a legal boundary, not a footnote: banner treatment, a
+   warning icon and bold text, but in the theme's own colors — amber washed out badly in
+   dark mode, and unreadable beats thematic. */
 .research-notice {
   margin: 0;
-  padding: 0.4rem 1rem;
+  padding: 0.55rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
   text-align: center;
-  font-size: 0.78rem;
-  line-height: 1.4;
-  color: color-mix(in oklab, var(--color-base-content) 72%, var(--color-base-100));
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-base-content);
   background: var(--color-base-200);
   border-bottom: 1px solid var(--color-base-300);
+}
+
+.research-notice svg {
+  flex: none;
+}
+
+.research-notice strong {
+  font-weight: 700;
 }
 
 .site-header {
@@ -656,6 +672,31 @@ code, kbd, pre {
   font-size: 1rem;
   line-height: 1.7;
   color: color-mix(in oklab, var(--color-base-content) 80%, var(--color-base-100));
+}
+
+/* Footnote: helper text the reader acts on ("On DailyMed, search ...") rather than a fact
+   about the edge. Same measure as the evidence paragraph, a step softer, so it reads as a
+   pointer beneath the argument instead of part of it. */
+.edge-footnote {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: color-mix(in oklab, var(--color-base-content) 65%, var(--color-base-100));
+}
+
+/* A release the config flags with a known error: a boxed note above the claim, on-theme but
+   with a warning-tinted accent, so a reader clocks that this stored version is suspect
+   without the page shouting. The text stays full-contrast base content; the icon is an
+   inline glyph aligned to the text baseline like the heroicons docs recommend. */
+.edge-known-error {
+  margin: 0;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--color-base-content);
+  background: var(--color-base-200);
+  border: 1px solid var(--color-base-300);
+  border-left: 3px solid var(--color-warning);
 }
 
 /* A list fold lives inside its sentence: the items past the cap sit behind an inline button

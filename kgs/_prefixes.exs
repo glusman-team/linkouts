@@ -20,6 +20,11 @@
     "MESH" => "https://id.nlm.nih.gov/mesh/$value",
     "MONDO" => "https://monarchinitiative.org/$curie",
     "UMLS" => "https://identifiers.org/$curie",
+    # Qualifier values on DAKP edges arrive as these CURIEs too (the RIG's sparse qualifier
+    # stack: anatomical, frequency, population, sex, temporal context).
+    "NCIT" =>
+      "https://ncit.nci.nih.gov/ncitbrowser/ConceptReport.jsp?dictionary=NCI_Thesaurus&code=$value",
+    "UBERON" => "https://monarchinitiative.org/$curie",
     "NCBITAXON" => "https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=$value",
     # FDA application numbers reach the label browser by number; the legacy page linked
     # NDA/ANDA/BLA spellings to the same browser, and ANDA- or BLA-only edges keep that.
@@ -38,6 +43,10 @@
     "DOI" => "https://doi.org/$value",
     # DailyMed SPL ids arrive as "dailymed:<uuid>" in the drug approvals KG.
     "DAILYMED" => "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=$value",
+    # Information resources arrive as "infores:<slug>" and resolve to their page in the
+    # Translator information resource registry's catalog (infores:dailymed, infores:faers, ...).
+    "INFORES" =>
+      "https://biolink.github.io/information-resource-registry/resources/$value",
     # The FDA's own daf browser, for CURIEs that name it explicitly.
     "FDA.APPLICATION" =>
       "https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=overview.process&ApplNo=$value"

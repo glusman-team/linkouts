@@ -4,6 +4,7 @@ defmodule EdgeLinkoutsWeb.PageControllerTest do
   import EdgeLinkouts.Cosmos.Fake, only: [reset: 0]
 
   alias EdgeLinkouts.Cosmos
+  alias EdgeLinkouts.Display
   alias EdgeLinkoutsWeb.Fixtures
 
   @slug "drugapprovals-kp"
@@ -21,7 +22,7 @@ defmodule EdgeLinkoutsWeb.PageControllerTest do
 
       # The display name comes from kgs/*.exs, the identifier beside it from the same config:
       # nothing on this page is stored, it is all derived from the index's counts.
-      assert html =~ "Drug Approvals KP"
+      assert html =~ "DrugApprovals KP"
       assert html =~ "infores:drugapprovals-kp"
       assert html =~ ~p"/#{@slug}/random"
       assert html =~ ~p"/#{@slug}/random?version=1.16.0"
@@ -43,9 +44,12 @@ defmodule EdgeLinkoutsWeb.PageControllerTest do
 
       html = conn |> get(~p"/") |> html_response(200)
 
-      assert html =~ "latest"
-      # The badge is a sibling of its pill (one display:contents group per release), so the two
-      # chips cannot overlap however the fonts size them.
+      # The badge only tags a release the store actually holds. The config's latest_version is
+      # 1.23.4 and these fixtures stop at 1.16.0, so nothing is tagged yet; the badge path is
+      # exercised again as soon as that release is loaded. The bar itself must still render.
+      latest = Display.get("infores:drugapprovals-kp").latest_version
+      assert latest == "1.23.4"
+      refute html =~ "latest-badge"
       assert html =~ "version-pill-group"
       refute html =~ "version-pill version-pill-latest"
     end
