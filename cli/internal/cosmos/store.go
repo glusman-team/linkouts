@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
+	"github.com/glusman-team/linkouts/cli/internal/ratelimit"
 )
 
 // Sentinel errors. Callers compare with errors.Is, never by string.

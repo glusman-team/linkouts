@@ -8,11 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
-	"github.com/glusman-team/edge-linkouts/cli/internal/cosmos"
-	"github.com/glusman-team/edge-linkouts/cli/internal/pipeline"
-	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
-	"github.com/glusman-team/edge-linkouts/cli/internal/version"
+	"github.com/glusman-team/linkouts/cli/internal/codec"
+	"github.com/glusman-team/linkouts/cli/internal/cosmos"
+	"github.com/glusman-team/linkouts/cli/internal/pipeline"
+	"github.com/glusman-team/linkouts/cli/internal/ratelimit"
+	"github.com/glusman-team/linkouts/cli/internal/version"
 )
 
 type statusFlags struct {

@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
+	"github.com/glusman-team/linkouts/cli/internal/codec"
 )
 
 // ErrStop ends a join cleanly. Returning it from an emit callback is how a caller that only

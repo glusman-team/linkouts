@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
+	"github.com/glusman-team/linkouts/cli/internal/codec"
 )
 
 type rigFlags struct {

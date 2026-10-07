@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
+	"github.com/glusman-team/linkouts/cli/internal/codec"
 )
 
 func fixtureDir(t *testing.T) string {

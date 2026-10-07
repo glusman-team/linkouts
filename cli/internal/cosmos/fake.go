@@ -6,7 +6,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
+	"github.com/glusman-team/linkouts/cli/internal/ratelimit"
 )
 
 // Fake is an in-memory Store for tests. It records every call and can be told to fail, so

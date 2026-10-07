@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
-	"github.com/glusman-team/edge-linkouts/cli/internal/cosmos"
-	"github.com/glusman-team/edge-linkouts/cli/internal/engine"
-	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
+	"github.com/glusman-team/linkouts/cli/internal/codec"
+	"github.com/glusman-team/linkouts/cli/internal/cosmos"
+	"github.com/glusman-team/linkouts/cli/internal/engine"
+	"github.com/glusman-team/linkouts/cli/internal/ratelimit"
 )
 
 const (

@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
-	"github.com/glusman-team/edge-linkouts/cli/internal/cosmos"
-	"github.com/glusman-team/edge-linkouts/cli/internal/engine"
-	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
+	"github.com/glusman-team/linkouts/cli/internal/codec"
+	"github.com/glusman-team/linkouts/cli/internal/cosmos"
+	"github.com/glusman-team/linkouts/cli/internal/engine"
+	"github.com/glusman-team/linkouts/cli/internal/ratelimit"
 )
 
 // loadBothReleases stores the two fixture releases and returns the store, so every purge test

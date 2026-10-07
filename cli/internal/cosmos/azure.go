@@ -14,8 +14,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/config"
-	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
+	"github.com/glusman-team/linkouts/cli/internal/config"
+	"github.com/glusman-team/linkouts/cli/internal/ratelimit"
 )
 
 // maxSDKRetries is raised above the SDK default of 3 because a bulk load is exactly the

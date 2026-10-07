@@ -1,4 +1,4 @@
-module github.com/glusman-team/edge-linkouts/cli
+module github.com/glusman-team/linkouts/cli
 
 go 1.26.7
 

@@ -1,4 +1,4 @@
-# edge-linkouts
+# linkouts
 
 Human-readable pages for individual knowledge-graph edges. Give it an edge UUID and it
 shows what the edge asserts, the evidence behind it, where it came from, and how it

@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/config"
-	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
+	"github.com/glusman-team/linkouts/cli/internal/config"
+	"github.com/glusman-team/linkouts/cli/internal/ratelimit"
 )
 
 func newInitCmd(g *globals) *cobra.Command {

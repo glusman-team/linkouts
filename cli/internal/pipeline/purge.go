@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
-	"github.com/glusman-team/edge-linkouts/cli/internal/cosmos"
-	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
-	"github.com/glusman-team/edge-linkouts/cli/internal/version"
+	"github.com/glusman-team/linkouts/cli/internal/codec"
+	"github.com/glusman-team/linkouts/cli/internal/cosmos"
+	"github.com/glusman-team/linkouts/cli/internal/ratelimit"
+	"github.com/glusman-team/linkouts/cli/internal/version"
 )
 
 // Purge removes stored data: either the whole store, or one release of one knowledge graph.

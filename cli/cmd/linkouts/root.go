@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/config"
-	"github.com/glusman-team/edge-linkouts/cli/internal/cosmos"
-	"github.com/glusman-team/edge-linkouts/cli/internal/engine"
-	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
+	"github.com/glusman-team/linkouts/cli/internal/config"
+	"github.com/glusman-team/linkouts/cli/internal/cosmos"
+	"github.com/glusman-team/linkouts/cli/internal/engine"
+	"github.com/glusman-team/linkouts/cli/internal/ratelimit"
 )
 
 // version is stamped by the release build (-ldflags "-X main.version=...").

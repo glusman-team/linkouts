@@ -16,7 +16,7 @@ import (
 	// ~540 MiB on first use (ADR 0002).
 	_ "github.com/chdb-io/chdb-go/lib/embedded"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
+	"github.com/glusman-team/linkouts/cli/internal/codec"
 )
 
 //go:embed join.sql

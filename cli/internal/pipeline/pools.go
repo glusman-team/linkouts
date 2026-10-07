@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
-	"github.com/glusman-team/edge-linkouts/cli/internal/cosmos"
-	"github.com/glusman-team/edge-linkouts/cli/internal/version"
+	"github.com/glusman-team/linkouts/cli/internal/codec"
+	"github.com/glusman-team/linkouts/cli/internal/cosmos"
+	"github.com/glusman-team/linkouts/cli/internal/version"
 )
 
 // This file is the read side of the random pools: the index document that says which releases

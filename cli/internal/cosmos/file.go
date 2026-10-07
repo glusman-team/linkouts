@@ -12,7 +12,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
+	"github.com/glusman-team/linkouts/cli/internal/ratelimit"
 )
 
 // FileStore is an append-only NDJSON backend. It exists so the web app, the contract tests,

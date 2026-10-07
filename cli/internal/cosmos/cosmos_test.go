@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/ratelimit"
+	"github.com/glusman-team/linkouts/cli/internal/ratelimit"
 )
 
 func testDoc(id string) Doc {

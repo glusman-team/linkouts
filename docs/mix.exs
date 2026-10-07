@@ -19,7 +19,7 @@ defmodule EdgeLinkoutsDocs.MixProject do
       # `mix site`, not `mix docs`: see Mix.Tasks.Site for why the API section needs it.
       aliases: [docs: "site"],
       name: "EdgeLinkouts",
-      source_url: "https://github.com/glusman-team/edge-linkouts",
+      source_url: "https://github.com/glusman-team/linkouts",
       docs: docs()
     ]
   end

@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/glusman-team/edge-linkouts/cli/internal/codec"
+	"github.com/glusman-team/linkouts/cli/internal/codec"
 )
 
 // errStop is the internal signal that ends eachNDJSON without being reported as a failure.
