@@ -104,7 +104,6 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
           sentence: sentence(config, doc, key),
           relationship: relationship(config, doc, key),
           latest: latest?(config, key),
-          latest_label: config && config.latest_version,
           evidence: evidence(config, doc, key),
           footnote: footnote(config, doc, key),
           known_error: known_error(config, key),
@@ -185,6 +184,11 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
         %{key: key, label: version_label(key), changes: changes}
     end)
     |> Enum.reject(&is_nil/1)
+    # The blob's order is the order versions were merged, which is load history, not
+    # version order; a release ingested late but numbered lower would sit at the wrong end.
+    # The timeline always reads oldest to newest, left to right, so the latest release is
+    # the rightmost pill no matter how the store accumulated it.
+    |> Enum.sort_by(& &1.label, fn a, b -> Codec.compare_versions(a, b) in [:lt, :eq] end)
   end
 
   # "infores:drugapprovals-kp-1.16.0" carries the KG name on every pill, which is noise once

@@ -158,6 +158,38 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
       assert render(view) =~ "1.11.2"
     end
 
+    test "the timeline always reads oldest to newest, latest rightmost, whatever the blob order",
+         %{conn: conn} do
+      # The blob's version order is load history, not version order: a release ingested
+      # late but numbered lower must not sit at the right end. The timeline sorts by
+      # version, so 1.11.2 leads and the latest badge follows the true newest pill.
+      Cosmos.Fake.seed(
+        Fixtures.stored("00000000-0000-4000-8000-000000000099", %{
+          "infores:drugapprovals-kp-1.16.0" => %{
+            "id" => "00000000-0000-4000-8000-000000000099",
+            "subject" => "a",
+            "predicate" => "biolink:treats",
+            "object" => "b"
+          },
+          "infores:drugapprovals-kp-1.11.2" => %{
+            "id" => "00000000-0000-4000-8000-000000000099",
+            "subject" => "a",
+            "predicate" => "biolink:treats",
+            "object" => "b"
+          }
+        })
+      )
+
+      {:ok, _view, html} = live(conn, "/edges/00000000-0000-4000-8000-000000000099")
+
+      first = html |> String.split("timeline-label") |> Enum.at(1)
+      assert first =~ "1.11.2"
+      assert html =~ ~r/1\.11\.2.{1,400}1\.16\.0/s
+      # The latest badge follows the rightmost (newest) pill, not the blob's last entry.
+      assert html =~ ~r/1\.16\.0.{1,200}latest-badge/s
+      refute html =~ ~r/latest-badge.{1,200}1\.16\.0/s
+    end
+
     test "an unknown id answers HTTP 404 with the not-found copy", %{conn: conn} do
       # The LiveView raises EdgeNotFound (plug_status 404); the endpoint renders the 404
       # page with that status and then re-raises, which is Phoenix's behaviour for every
