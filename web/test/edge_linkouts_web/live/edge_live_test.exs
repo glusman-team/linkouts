@@ -158,11 +158,11 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
       assert render(view) =~ "1.11.2"
     end
 
-    test "the timeline always reads oldest to newest, latest rightmost, whatever the blob order",
+    test "the timeline reads newest first and decreases to the right, whatever the blob order",
          %{conn: conn} do
       # The blob's version order is load history, not version order: a release ingested
-      # late but numbered lower must not sit at the right end. The timeline sorts by
-      # version, so 1.11.2 leads and the latest badge follows the true newest pill.
+      # late but numbered lower must not lead. The timeline sorts by version, so 1.16.0
+      # leads, its latest badge trails it, and older releases decrease to the right.
       Cosmos.Fake.seed(
         Fixtures.stored("00000000-0000-4000-8000-000000000099", %{
           "infores:drugapprovals-kp-1.16.0" => %{
@@ -183,10 +183,10 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
       {:ok, _view, html} = live(conn, "/edges/00000000-0000-4000-8000-000000000099")
 
       first = html |> String.split("timeline-label") |> Enum.at(1)
-      assert first =~ "1.11.2"
-      assert html =~ ~r/1\.11\.2.{1,400}1\.16\.0/s
-      # The latest badge leads the newest pill on its left: oldest first, badge then pill.
-      assert html =~ ~r/1\.11\.2.{1,400}latest-badge.{1,200}1\.16\.0/s
+      assert first =~ "1.16.0"
+      assert html =~ ~r/1\.16\.0.{1,400}1\.11\.2/s
+      # The latest badge trails the newest pill on its right: "1.16.0, latest, 1.11.2".
+      assert html =~ ~r/1\.16\.0.{1,200}latest-badge.{1,400}1\.11\.2/s
     end
 
     test "an unknown id answers HTTP 404 with the not-found copy", %{conn: conn} do

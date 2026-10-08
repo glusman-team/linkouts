@@ -228,11 +228,11 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
   attr :current, :string, required: true
 
   def version_timeline(assigns) do
-    # The latest release is the rightmost pill by construction (history is sorted oldest to
-    # newest), so the badge keys off the last step, not a label match against the config:
-    # a blob accumulated out of version order still badges the true newest.
+    # The latest release is the first pill by construction (history is sorted newest first),
+    # so the badge keys off that step, not a label match against the config: a blob
+    # accumulated out of version order still badges the true newest.
     latest_key =
-      case List.last(assigns.history) do
+      case List.first(assigns.history) do
         nil -> nil
         step -> step.key
       end
@@ -243,9 +243,6 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
     <nav aria-label="Stored versions" class="timeline">
       <ol>
         <li :for={step <- @history}>
-          <%!-- Before the pill, not inside it: the same chip the home page's pill row uses.
-               Reading order is "latest, 1.23.4", so the chip leads its pill on the left. --%>
-          <span :if={step.key == @latest_key} class="latest-badge">latest</span>
           <.link
             patch={~p"/edges/#{@edge_id}?version=#{step.key}"}
             class="timeline-step"
@@ -257,6 +254,9 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
             </span>
             <span :if={step.changes == 0} class="count-badge">no changes</span>
           </.link>
+          <%!-- Beside the pill, not inside it: the same chip the home page's pill row uses.
+               Reading order is "1.23.4, latest", so the chip trails its pill on the right. --%>
+          <span :if={step.key == @latest_key} class="latest-badge">latest</span>
         </li>
       </ol>
     </nav>

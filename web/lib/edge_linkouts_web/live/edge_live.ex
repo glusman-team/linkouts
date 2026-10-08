@@ -186,9 +186,9 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
     |> Enum.reject(&is_nil/1)
     # The blob's order is the order versions were merged, which is load history, not
     # version order; a release ingested late but numbered lower would sit at the wrong end.
-    # The timeline always reads oldest to newest, left to right, so the latest release is
-    # the rightmost pill no matter how the store accumulated it.
-    |> Enum.sort_by(& &1.label, fn a, b -> Codec.compare_versions(a, b) in [:lt, :eq] end)
+    # The timeline reads newest first and decreases to the right ("1.23.4, 1.23.3, ..."),
+    # matching the home page pill row, no matter how the store accumulated the releases.
+    |> Enum.sort_by(& &1.label, fn a, b -> Codec.compare_versions(a, b) in [:gt, :eq] end)
   end
 
   # "infores:drugapprovals-kp-1.16.0" carries the KG name on every pill, which is noise once
