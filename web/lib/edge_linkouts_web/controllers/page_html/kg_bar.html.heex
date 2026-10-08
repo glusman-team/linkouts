@@ -36,8 +36,10 @@
 
   <div class="version-pills" id={"kg-pills-#{@row.slug}"} data-kg-pills>
     <%!-- Pill + badge live in a display:contents group, so the badge is a row-level chip next
-         to the pill, never an inner element landing on the pill's border. --%>
+         to the pill, never an inner element landing on the pill's border. It leads the pill on
+         the left, matching the edge page timeline ("latest, 1.23.4"). --%>
     <div :for={release <- @row.releases} class="version-pill-group">
+      <span :if={release.latest?} class="latest-badge">latest</span>
       <a
         class="version-pill"
         href={~p"/#{@row.slug}/random?version=#{release.label}"}
@@ -47,7 +49,6 @@
       >
         {release.label}
       </a>
-      <span :if={release.latest?} class="latest-badge">latest</span>
     </div>
 
     <button

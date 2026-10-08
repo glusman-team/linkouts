@@ -243,6 +243,9 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
     <nav aria-label="Stored versions" class="timeline">
       <ol>
         <li :for={step <- @history}>
+          <%!-- Before the pill, not inside it: the same chip the home page's pill row uses.
+               Reading order is "latest, 1.23.4", so the chip leads its pill on the left. --%>
+          <span :if={step.key == @latest_key} class="latest-badge">latest</span>
           <.link
             patch={~p"/edges/#{@edge_id}?version=#{step.key}"}
             class="timeline-step"
@@ -254,8 +257,6 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
             </span>
             <span :if={step.changes == 0} class="count-badge">no changes</span>
           </.link>
-          <%!-- Beside the pill, not inside it: the same chip the home page's pill row uses. --%>
-          <span :if={step.key == @latest_key} class="latest-badge">latest</span>
         </li>
       </ol>
     </nav>

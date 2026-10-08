@@ -185,9 +185,8 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
       first = html |> String.split("timeline-label") |> Enum.at(1)
       assert first =~ "1.11.2"
       assert html =~ ~r/1\.11\.2.{1,400}1\.16\.0/s
-      # The latest badge follows the rightmost (newest) pill, not the blob's last entry.
-      assert html =~ ~r/1\.16\.0.{1,200}latest-badge/s
-      refute html =~ ~r/latest-badge.{1,200}1\.16\.0/s
+      # The latest badge leads the newest pill on its left: oldest first, badge then pill.
+      assert html =~ ~r/1\.11\.2.{1,400}latest-badge.{1,200}1\.16\.0/s
     end
 
     test "an unknown id answers HTTP 404 with the not-found copy", %{conn: conn} do
