@@ -1,0 +1,33 @@
+# fly.toml app configuration file generated for edge-linkouts on 2026-10-08T11:26:59-07:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'edge-linkouts'
+primary_region = 'lax'
+kill_signal = 'SIGTERM'
+kill_timeout = '5s'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  PHX_SERVER = 'true'
+  PORT = '8080'
+  RU_BUDGET_WEB = '450'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = 'requests'
+    hard_limit = 1000
+    soft_limit = 500
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'

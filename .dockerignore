@@ -1,0 +1,17 @@
+.git
+.direnv
+node_modules
+docs/_build/
+docs/deps/
+docs/doc/
+web/_build/
+web/deps/
+web/assets/node_modules/
+web/priv/static/assets/
+web/tmp/
+/data/
+/tmp/
+*.ndjson.gz
+Dockerfile
+fly.toml
+.dockerignore
