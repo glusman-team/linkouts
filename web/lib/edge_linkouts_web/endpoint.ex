@@ -38,6 +38,12 @@ defmodule EdgeLinkoutsWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
+  # Origin lockdown: reject anything that did not come through the Cloudflare zone
+  # (the zone adds the shared header via a Transform Rule). Nothing here runs without
+  # it, so direct hits on the fly.dev hostname cannot reach the store. Inert unless
+  # ORIGIN_CHECK_KEY is set, so local dev and tests are untouched.
+  plug EdgeLinkoutsWeb.OriginCheck
+
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
