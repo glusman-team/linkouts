@@ -86,6 +86,14 @@ defmodule EdgeLinkouts.Display do
 
   @table Map.new(@configs)
 
+  # The same configs keyed by slug (the name without its `infores:` prefix). Stored version
+  # keys may carry either form: a release loaded as "drugapprovals-kp-1.23.4" names the same
+  # KG as "infores:drugapprovals-kp-1.23.4", and must get the same config rather than the
+  # generic default.
+  @slug_table Map.new(@configs, fn {name, {config, _path}} ->
+                {String.replace_prefix(name, "infores:", ""), config}
+              end)
+
   @type t :: Config.t()
 
   @doc "The KG names with a display config, sorted."
@@ -108,7 +116,7 @@ defmodule EdgeLinkouts.Display do
   def get(name) do
     case Map.fetch(@table, name) do
       {:ok, {config, _path}} -> config
-      :error -> nil
+      :error -> Map.get(@slug_table, slug(name))
     end
   end
 

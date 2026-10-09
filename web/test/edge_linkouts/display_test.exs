@@ -79,6 +79,27 @@ defmodule EdgeLinkouts.DisplayTest do
       assert Display.for_key("infores:drugapprovals-kp-1.16.0").name == "infores:drugapprovals-kp"
     end
 
+    test "a version key stored without the infores prefix gets the same config" do
+      # The live store was loaded as "drugapprovals-kp-1.23.4"; an exact-name lookup fell back
+      # to the generic default and the edge page lost its sentence, evidence, about section and
+      # known-issue notice.
+      for key <- ["drugapprovals-kp-1.23.4", "infores:drugapprovals-kp-1.23.4"] do
+        config = Display.for_key(key)
+        assert config.name == "infores:drugapprovals-kp", key
+        assert config.display_name == "DrugApprovals KP"
+      end
+
+      assert Display.get("drugapprovals-kp") == Display.get("infores:drugapprovals-kp")
+
+      assert Display.known_error(
+               Display.for_key("drugapprovals-kp-1.23.3"),
+               "drugapprovals-kp-1.23.3"
+             )
+
+      assert Display.get("no-such-kp") == nil
+      assert Display.for_key("no-such-kp-1.0.0").name == "default"
+    end
+
     test "a slug is the name without its infores prefix, and expands back to it" do
       # The slug is what a document stores and what a URL carries; the canonical name is what
       # the config table is keyed by. Both directions have to agree or a link on the bar points
