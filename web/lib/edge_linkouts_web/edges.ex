@@ -27,10 +27,27 @@ defmodule EdgeLinkoutsWeb.Edges do
 
   Returns `{:error, :rate_limited}` for every capacity refusal: the local RU budget is spent, or
   Cosmos answered 429 twice. Other failures pass through from the backend.
+
+  Ids are validated before anything is read. A stored id is a Cosmos document id - at most
+  255 bytes, none of `/`, `\\`, `?`, `#` (illegal there), and never the `__` prefix that
+  marks the app's own reserved pool documents. Anything else cannot exist, so it answers
+  `{:error, :not_found}` without a backend call: malformed scanner traffic must cost zero
+  request units, not one per hit.
   """
   @spec fetch_edge(String.t()) :: {:ok, stored :: map()} | {:error, term()}
   def fetch_edge(id) when is_binary(id) do
-    read(id, fn -> Cosmos.impl().get_edge(id) end)
+    if valid_id?(id) do
+      read(id, fn -> Cosmos.impl().get_edge(id) end)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  @doc false
+  def valid_id?(id) do
+    byte_size(id) in 1..255 and
+      not String.starts_with?(id, "__") and
+      not String.contains?(id, ["/", "\\", "?", "#"])
   end
 
   @doc """

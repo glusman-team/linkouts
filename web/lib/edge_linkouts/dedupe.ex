@@ -6,8 +6,7 @@ defmodule EdgeLinkouts.Dedupe do
   Two browsers opening the same edge within a millisecond must produce one backend call.
   `execute/3` makes the first caller the leader, which runs the function; concurrent
   callers for the same id wait and receive the leader's exact result. The result is shared
-  by message, not cached: the coalescing half is request dedupe, not an HTTP cache
-  (PLAN.md D5).
+  by message, not cached: the coalescing half is request dedupe, not an HTTP cache.
 
   Failure handling:
 
@@ -23,10 +22,15 @@ defmodule EdgeLinkouts.Dedupe do
   connected process, a few hundred milliseconds apart. Coalescing alone cannot merge those,
   because the first read has finished before the second starts, so every page view would
   cost two Cosmos reads. Successful results are therefore replayed for `:ttl_ms`
-  (default 30 s, PLAN.md D5) from the cache named by the `:cache` option
-  (`EdgeLinkouts.Cache` by default); a read may pass `:ttl_ms` to override the default,
-  which is how pool documents replay for 15 minutes (see the web read path). Only
-  `{:ok, _}` is kept: a 404, a throttle or an outage is retried rather than replayed.
+  (default 30 s) from the cache named by the `:cache` option (`EdgeLinkouts.Cache` by
+  default); a read may pass `:ttl_ms` to override the default, which is how pool documents
+  replay for 15 minutes (see the web read path).
+
+  Not-found is also replayed, briefly: `{:error, :not_found}` is kept for
+  `:negative_ttl_ms` (default 10 s) so a crawler hammering dead links does not re-spend a
+  request unit per hit. The negative ttl is deliberately independent of any caller's
+  `:ttl_ms` override - a pool read passing a 15-minute override must not pin a 404 for
+  15 minutes. Every other failure - a throttle, an outage - is retried, never replayed.
 
   The cache is read from the calling process, so the hot path never waits on this
   GenServer; the server only writes, and the write is a synchronous call before the leader
@@ -41,6 +45,7 @@ defmodule EdgeLinkouts.Dedupe do
 
   @default_wait_ms 500
   @default_ttl_ms 30_000
+  @default_negative_ttl_ms 10_000
 
   def start_link(opts \\ []) do
     opts = Keyword.put_new(opts, :name, __MODULE__)
@@ -55,7 +60,7 @@ defmodule EdgeLinkouts.Dedupe do
 
   `opts`:
 
-  - `:ttl_ms` — how long a successful result may be replayed, overriding the server default.
+  - `:ttl_ms` - how long a successful result may be replayed, overriding the server default.
     A read of a document the CLI only rewrites on a load (the pool index, one release's pool)
     can be replayed for minutes without showing anything stale to a person; an edge document
     uses the default, so a page view right after a load shows the release that was just loaded.
@@ -83,7 +88,7 @@ defmodule EdgeLinkouts.Dedupe do
   # Read the recent-results cache from the calling process. A miss, a cache that is not
   # running, or a server that is not running all fall through to a normal read.
   # with_dynamic_cache/2 is how Nebulex v3 scopes calls to a named instance: the leading-arg
-  # arities collide with the public defaults (Cache.get(instance, key) would read key=:instance
+  # arities collide with the public defaults (Cache.get(instance, key) would read key=instance
   # on the default cache), so there is no per-call instance argument.
   defp recent(server, id) do
     case cache_for(server) do
@@ -141,7 +146,18 @@ defmodule EdgeLinkouts.Dedupe do
 
   # ---------------------------------------------------------------- server
 
-  defstruct claims: %{}, wait_ms: @default_wait_ms, ttl_ms: @default_ttl_ms, cache: Cache
+  # claims is keyed by id; by_key maps each claim's key (a make_ref) back to its id and
+  # by_monitor maps every monitor ref to {role, id, pid}. Completion, cancellation and every
+  # DOWN therefore land in single map lookups instead of scans over all claims - the old
+  # find-by-key walked every claim, and the old find-by-monitor walked every claim AND
+  # every waiter, which is quadratic under a stampede.
+  defstruct claims: %{},
+            by_key: %{},
+            by_monitor: %{},
+            wait_ms: @default_wait_ms,
+            ttl_ms: @default_ttl_ms,
+            negative_ttl_ms: @default_negative_ttl_ms,
+            cache: Cache
 
   @impl true
   def init(opts) do
@@ -157,10 +173,21 @@ defmodule EdgeLinkouts.Dedupe do
         Application.get_env(:edge_linkouts, :dedupe_ttl_ms, @default_ttl_ms)
       end)
 
+    negative_ttl_ms =
+      Keyword.get_lazy(opts, :negative_ttl_ms, fn ->
+        Application.get_env(:edge_linkouts, :negative_ttl_ms, @default_negative_ttl_ms)
+      end)
+
     cache = Keyword.get(opts, :cache, Cache)
     :persistent_term.put({__MODULE__, :cache, name}, cache)
 
-    {:ok, %__MODULE__{wait_ms: wait_ms, ttl_ms: ttl_ms, cache: cache}}
+    {:ok,
+     %__MODULE__{
+       wait_ms: wait_ms,
+       ttl_ms: ttl_ms,
+       negative_ttl_ms: negative_ttl_ms,
+       cache: cache
+     }}
   end
 
   @impl true
@@ -175,14 +202,16 @@ defmodule EdgeLinkouts.Dedupe do
       :error ->
         key = make_ref()
         claim = %{owner: pid, mon: Process.monitor(pid), key: key, waiters: []}
-        {:reply, {:leader, key}, put_claim(state, id, claim)}
+        state = state |> put_claim(id, claim) |> put_monitor(claim.mon, {:owner, id, pid})
+        {:reply, {:leader, key}, state}
 
       {:ok, claim} ->
         waiter = %{pid: pid, mon: Process.monitor(pid)}
         claim = %{claim | waiters: [waiter | claim.waiters]}
+        state = state |> put_claim(id, claim) |> put_monitor(waiter.mon, {:waiter, id, pid})
         # Waiters wait on the claim's key, which is what the owner's completion notifies
         # with; per-waiter keys would never match.
-        {:reply, {:wait, claim.key, state.wait_ms}, put_claim(state, id, claim)}
+        {:reply, {:wait, claim.key, state.wait_ms}, state}
     end
   end
 
@@ -201,7 +230,7 @@ defmodule EdgeLinkouts.Dedupe do
   def handle_cast({:crashed, key}, state) do
     case fetch_claim(state, key) do
       nil -> {:noreply, state}
-      entry -> {:noreply, finish(entry, {:leader_down, key}, state)}
+      entry -> {:noreply, finish(entry, :leader_down, state)}
     end
   end
 
@@ -212,41 +241,101 @@ defmodule EdgeLinkouts.Dedupe do
 
       {id, claim} ->
         {removed, kept} = Enum.split_with(claim.waiters, &(&1.pid == pid))
-        Enum.each(removed, &Process.demonitor(&1.mon, [:flush]))
+        state = drop_waiter_monitors(state, removed)
         {:noreply, put_claim(state, id, %{claim | waiters: kept})}
     end
   end
 
   @impl true
   def handle_info({:DOWN, mon, :process, _pid, _reason}, state) do
-    case find_by_monitor(state, mon) do
-      {:owner, id, claim} ->
-        {:noreply, finish({id, claim}, {:leader_down, claim.key}, state)}
+    case Map.fetch(state.by_monitor, mon) do
+      {:ok, {:owner, id, _pid}} ->
+        {:noreply, finish({id, Map.fetch!(state.claims, id)}, :leader_down, state)}
 
-      {:waiter, id, claim, waiter} ->
-        Process.demonitor(waiter.mon, [:flush])
-        waiters = List.delete(claim.waiters, waiter)
-        {:noreply, put_claim(state, id, %{claim | waiters: waiters})}
+      {:ok, {:waiter, id, pid}} ->
+        Process.demonitor(mon, [:flush])
+        claim = Map.fetch!(state.claims, id)
+        waiters = Enum.reject(claim.waiters, &(&1.pid == pid))
+        {:noreply, state |> drop_monitor(mon) |> put_claim(id, %{claim | waiters: waiters})}
 
-      nil ->
+      :error ->
         {:noreply, state}
     end
   end
 
   # Sends the outcome to every waiter, drops their monitors, and removes the claim, so a
   # crashed leader or caller never leaves an entry behind.
-  defp finish({id, claim}, message, state) do
-    Enum.each(claim.waiters, fn waiter ->
-      Process.demonitor(waiter.mon, [:flush])
-      send(waiter.pid, message)
-    end)
+  defp finish({id, claim}, outcome, state) do
+    message = outcome_message(outcome, claim.key)
+    state = drop_waiter_monitors(state, claim.waiters)
+    Process.demonitor(claim.mon, [:flush])
 
-    %{state | claims: Map.delete(state.claims, id)}
+    state =
+      state
+      |> drop_index(claim.key)
+      |> drop_monitor(claim.mon)
+      |> Map.update!(:claims, &Map.delete(&1, id))
+
+    Enum.each(claim.waiters, &send(&1.pid, message))
+    state
   end
 
-  # Only successes are kept: a 404, a throttle or an outage must be retried, not replayed.
-  # A server-wide ttl of zero disables caching entirely, and a caller's override cannot revive it.
+  defp outcome_message(:leader_down, key), do: {:leader_down, key}
+
+  defp outcome_message({:dedupe_result, key, result}, _claim_key),
+    do: {:dedupe_result, key, result}
+
+  defp drop_waiter_monitors(state, waiters) do
+    Enum.reduce(waiters, state, fn waiter, acc ->
+      Process.demonitor(waiter.mon, [:flush])
+      drop_monitor(acc, waiter.mon)
+    end)
+  end
+
+  # put_claim keeps both indexes coherent: claims by id, and the claim's key mapped back
+  # to its id (waiter joins re-put the same key/id pair, which is idempotent).
+  defp put_claim(%__MODULE__{} = state, id, claim),
+    do: %{
+      state
+      | claims: Map.put(state.claims, id, claim),
+        by_key: Map.put(state.by_key, claim.key, id)
+    }
+
+  defp put_monitor(state, mon, entry),
+    do: Map.update!(state, :by_monitor, &Map.put(&1, mon, entry))
+
+  defp drop_monitor(state, mon),
+    do: Map.update!(state, :by_monitor, &Map.delete(&1, mon))
+
+  defp drop_index(state, key) when is_reference(key),
+    do: Map.update!(state, :by_key, &Map.delete(&1, key))
+
+  defp fetch_claim(state, key) do
+    case Map.fetch(state.by_key, key) do
+      {:ok, id} -> {id, Map.fetch!(state.claims, id)}
+      :error -> nil
+    end
+  end
+
+  # Only successes and not-found are kept: a throttle or an outage must be retried, not
+  # replayed. A server-wide ttl of zero disables caching entirely, and a caller's override
+  # cannot revive it. Not-found uses the short negative ttl so it never rides a caller's
+  # long pool override.
   defp remember(%{ttl_ms: default}, _id, _result, _override) when default <= 0, do: :ok
+
+  defp remember(
+         %{cache: cache, negative_ttl_ms: neg},
+         id,
+         {:error, :not_found} = result,
+         _override
+       )
+       when neg > 0 do
+    _ = Cache.with_dynamic_cache(cache, fn -> Cache.put(id, result, ttl: neg) end)
+    :ok
+  end
+
+  defp remember(%{negative_ttl_ms: neg}, _id, {:error, :not_found}, _override) when neg <= 0,
+    do: :ok
 
   defp remember(%{cache: cache} = state, id, {:ok, _} = result, override) do
     ttl = if is_integer(override) and override > 0, do: override, else: state.ttl_ms
@@ -257,22 +346,4 @@ defmodule EdgeLinkouts.Dedupe do
   end
 
   defp remember(_state, _id, _result, _override), do: :ok
-
-  defp put_claim(state, id, claim), do: %{state | claims: Map.put(state.claims, id, claim)}
-
-  defp fetch_claim(state, key) do
-    Enum.find_value(state.claims, fn {id, claim} ->
-      if claim.key == key, do: {id, claim}
-    end)
-  end
-
-  defp find_by_monitor(state, mon) do
-    Enum.find_value(state.claims, fn {id, claim} ->
-      cond do
-        claim.mon == mon -> {:owner, id, claim}
-        waiter = Enum.find(claim.waiters, &(&1.mon == mon)) -> {:waiter, id, claim, waiter}
-        true -> nil
-      end
-    end)
-  end
 end

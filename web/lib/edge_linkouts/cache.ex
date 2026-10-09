@@ -9,8 +9,11 @@ defmodule EdgeLinkouts.Cache do
     must show the release that was just loaded.
   - **pool index / one release's pool** — 15 min (`:pool_ttl_ms`, set per read by `Edges`).
     Those documents are rewritten only when the CLI loads a release.
+  - **not-found** — briefly (`:negative_ttl_ms`, default 10 s), so dead-link traffic costs
+    nothing, without a long-ttl override being able to pin a 404.
 
-  Only `{:ok, _}` is ever stored: a 404, a throttle or an outage is retried, not replayed.
+  `{:ok, _}` and `{:error, :not_found}` are the only results ever stored: a throttle or an
+  outage is retried, not replayed.
 
   The adapter is `Nebulex.Adapters.Local`: generational ETS with reads promoting hot
   entries into the newer generation, so eviction is recency-aware (a full table evicts

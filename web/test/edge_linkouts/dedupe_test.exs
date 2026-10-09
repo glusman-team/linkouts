@@ -176,16 +176,53 @@ defmodule EdgeLinkouts.DedupeTest do
       assert Cosmos.Fake.calls(fake) == [{:get_edge, "e1"}]
     end
 
-    test "a failure is not remembered, so the next view retries", %{fake: fake} do
+    test "not-found is briefly remembered; a throttle never is", %{fake: fake} do
       dedupe = start_cached_dedupe()
+
+      # A 404 IS replayed for the short negative ttl: crawlers hammering dead links must
+      # not re-spend a request unit per hit.
+      assert {:error, :not_found} = read(dedupe, fake, "missing")
+      assert {:error, :not_found} = read(dedupe, fake, "missing")
+      assert Cosmos.Fake.calls(fake) == [{:get_edge, "missing"}]
+
+      # A capacity refusal is never replayed - the next view retries immediately.
+      Cosmos.Fake.queue_error({:throttled, 100}, fake)
+      assert {:error, {:throttled, 100}} = read(dedupe, fake, "e1")
+      assert {:ok, _} = read(dedupe, fake, "e1")
+      assert length(Cosmos.Fake.calls(fake)) == 3
+    end
+
+    test "not-found expires after the negative ttl", %{fake: fake} do
+      dedupe = start_cached_dedupe(ttl_ms: 30_000, negative_ttl_ms: 20)
+
+      assert {:error, :not_found} = read(dedupe, fake, "missing")
+      Process.sleep(40)
+      assert {:error, :not_found} = read(dedupe, fake, "missing")
+      assert length(Cosmos.Fake.calls(fake)) == 2
+    end
+
+    test "a long caller ttl override never pins a not-found" do
+      # The pool read path passes ttl_ms: 15 min; a missing pool must not be replayed for
+      # 15 minutes - the negative ttl is independent of the override.
+      dedupe = start_cached_dedupe(ttl_ms: 30_000, negative_ttl_ms: 20)
+
+      assert {:error, :not_found} =
+               Dedupe.execute("missing", fn -> {:error, :not_found} end, dedupe, ttl_ms: 900_000)
+
+      Process.sleep(40)
+
+      assert {:error, :not_found} =
+               Dedupe.execute("missing", fn -> {:error, :not_found} end, dedupe, ttl_ms: 900_000)
+    end
+
+    test "a negative ttl of zero disables 404 replay like ttl 0 disables success replay", %{
+      fake: fake
+    } do
+      dedupe = start_cached_dedupe(ttl_ms: 30_000, negative_ttl_ms: 0)
 
       assert {:error, :not_found} = read(dedupe, fake, "missing")
       assert {:error, :not_found} = read(dedupe, fake, "missing")
       assert length(Cosmos.Fake.calls(fake)) == 2
-
-      Cosmos.Fake.queue_error({:throttled, 100}, fake)
-      assert {:error, {:throttled, 100}} = read(dedupe, fake, "e1")
-      assert {:ok, _} = read(dedupe, fake, "e1")
     end
 
     test "results expire after the ttl", %{fake: fake} do
