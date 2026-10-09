@@ -45,9 +45,18 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
 
     case Edges.fetch_edge(id) do
       {:ok, stored} ->
-        case Codec.decode(stored["b"], Cosmos.dictionary()) do
-          {:ok, blob} -> select_version(assign(socket, blob: blob), params)
-          {:error, reason} -> assign(socket, view: {:corrupt, human_reason(reason)}, blob: nil)
+        case Cosmos.dictionary_for(stored) do
+          {:ok, dict} ->
+            case Codec.decode(stored["b"], dict) do
+              {:ok, blob} ->
+                select_version(assign(socket, blob: blob), params)
+
+              {:error, reason} ->
+                assign(socket, view: {:corrupt, human_reason(reason)}, blob: nil)
+            end
+
+          {:error, reason} ->
+            assign(socket, view: {:corrupt, human_reason(reason)}, blob: nil)
         end
 
       {:error, :rate_limited} ->
@@ -234,6 +243,10 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
   end
 
   defp human_reason({:cycle, version}), do: "the delta chain for #{inspect(version)} is circular"
+
+  defp human_reason({:unknown_dict, id}),
+    do: "the document was compressed with a dictionary this build does not carry (#{id})"
+
   defp human_reason({:null_at, path}), do: "a null value at #{path}"
   defp human_reason({:null_at, path, version}), do: "a null value at #{path} (#{version})"
 

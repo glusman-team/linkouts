@@ -257,4 +257,52 @@ defmodule EdgeLinkouts.ContractTest do
       end
     end
   end
+
+  describe "dict-compressed fixtures (storage v2)" do
+    # Same logical documents as docs.ndjson, written with --dict fixture.dict. The registry
+    # resolves each envelope's `d` to the dictionary, and decoding must reproduce the exact
+    # canonical bytes the dict-less encoding carries: the two encodings are interconvertible,
+    # which is what makes a mixed store safe.
+    setup do
+      dir = Path.expand("fixtures/contract", __DIR__)
+
+      %{
+        registry: EdgeLinkouts.Dicts.load!(dir),
+        dict_docs: read_docs(Path.join(dir, "dictdocs.ndjson")),
+        plain_docs: read_docs(Path.join(dir, "docs.ndjson"))
+      }
+    end
+
+    test "every dict doc declares the trained dictionary's id", %{
+      dict_docs: dict_docs,
+      registry: registry
+    } do
+      assert map_size(registry) == 1
+      [expected_id] = Map.keys(registry)
+
+      for doc <- edge_docs(dict_docs) do
+        assert doc["d"] == expected_id, "#{doc["id"]} declares #{inspect(doc["d"])}"
+      end
+    end
+
+    test "dict docs decode through the registry to the same canonical bytes", %{
+      dict_docs: dict_docs,
+      plain_docs: plain_docs,
+      registry: registry
+    } do
+      plain_by_id = Map.new(edge_docs(plain_docs), &{&1["id"], &1})
+
+      for doc <- edge_docs(dict_docs) do
+        assert {:ok, dict} = EdgeLinkouts.Dicts.for_doc(doc, registry)
+        assert {:ok, blob} = Codec.decode(doc["b"], dict), "failed to decode #{doc["id"]}"
+        assert {:ok, v1} = Codec.resolve(blob, @v1)
+
+        plain = plain_by_id[doc["id"]]
+        assert plain, "dict fixture has #{doc["id"]} but the plain fixture does not"
+        assert {:ok, plain_blob} = Codec.decode(plain["b"])
+        assert {:ok, plain_v1} = Codec.resolve(plain_blob, @v1)
+        assert Codec.canonical_binary(v1) == Codec.canonical_binary(plain_v1)
+      end
+    end
+  end
 end

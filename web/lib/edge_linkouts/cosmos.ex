@@ -71,32 +71,15 @@ defmodule EdgeLinkouts.Cosmos do
   end
 
   @doc """
-  The trained zstd dictionary bytes to decompress with, or `nil` when none is configured.
-
-  Selected with `config :edge_linkouts, :zstd_dict_path` (a path to a dictionary the CLI
-  trained). The file is read once and cached; a stored document whose `d` does not match
-  this dictionary fails loudly inside `EdgeLinkouts.Codec` instead of rendering garbage.
+  The trained zstd dictionary a stored document needs, resolved by the id in its `d` field
+  through the `EdgeLinkouts.Dicts` registry (`priv/zstd/*.dict`, loaded at boot). `{:ok, nil}`
+  for a document that declares none; `{:error, {:unknown_dict, id}}` when the registry does
+  not carry that dictionary, which fails the read loudly instead of decoding garbage.
   """
-  @spec dictionary() :: binary() | nil
-  def dictionary do
-    case Application.get_env(:edge_linkouts, :zstd_dict_path) do
-      nil ->
-        nil
-
-      path ->
-        cache_key = {__MODULE__, :zstd_dictionary}
-
-        case :persistent_term.get(cache_key, :missing) do
-          :missing ->
-            dictionary = File.read!(path)
-            :persistent_term.put(cache_key, dictionary)
-            dictionary
-
-          dictionary ->
-            dictionary
-        end
-    end
-  end
+  @doc since: "0.2.0"
+  @spec dictionary_for(map()) ::
+          {:ok, binary() | nil} | {:error, {:unknown_dict, non_neg_integer()}}
+  def dictionary_for(doc), do: EdgeLinkouts.Dicts.for_doc(doc)
 
   @doc """
   Decodes one release's stored pool document into its sampled edge ids.
@@ -109,7 +92,10 @@ defmodule EdgeLinkouts.Cosmos do
   @doc section: :internal
   @spec decode_pool_doc(map()) :: {:ok, EdgeLinkouts.Codec.pool()} | {:error, term()}
   def decode_pool_doc(%{"b" => b64} = doc) do
-    EdgeLinkouts.Codec.decode_pool(b64, dictionary_for(doc))
+    case dictionary_for(doc) do
+      {:ok, dict} -> EdgeLinkouts.Codec.decode_pool(b64, dict)
+      {:error, _} = err -> err
+    end
   end
 
   def decode_pool_doc(other), do: {:error, {:not_a_pool_doc, other}}
@@ -119,18 +105,11 @@ defmodule EdgeLinkouts.Cosmos do
   @doc section: :internal
   @spec decode_pool_index_doc(map()) :: {:ok, EdgeLinkouts.Codec.pool_index()} | {:error, term()}
   def decode_pool_index_doc(%{"b" => b64} = doc) do
-    EdgeLinkouts.Codec.decode_pool_index(b64, dictionary_for(doc))
+    case dictionary_for(doc) do
+      {:ok, dict} -> EdgeLinkouts.Codec.decode_pool_index(b64, dict)
+      {:error, _} = err -> err
+    end
   end
 
   def decode_pool_index_doc(other), do: {:error, {:not_a_pool_index_doc, other}}
-
-  # A document that declares no dictionary must be decompressed without one: passing the
-  # configured dictionary to an undictionaried frame is what makes `:zstd` fail confusingly.
-  defp dictionary_for(doc) do
-    case Map.get(doc, "d") do
-      nil -> nil
-      0 -> nil
-      _dict_id -> dictionary()
-    end
-  end
 end

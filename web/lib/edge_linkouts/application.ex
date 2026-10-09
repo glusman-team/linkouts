@@ -7,6 +7,10 @@ defmodule EdgeLinkouts.Application do
 
   @impl true
   def start(_type, _args) do
+    # Dictionaries before anything that reads: the registry is the decode path for every
+    # stored document, and a boot that cannot read its dictionaries must fail here.
+    EdgeLinkouts.Dicts.reload!()
+
     children =
       [
         {Phoenix.PubSub, name: EdgeLinkouts.PubSub},

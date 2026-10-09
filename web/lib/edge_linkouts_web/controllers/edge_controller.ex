@@ -18,7 +18,8 @@ defmodule EdgeLinkoutsWeb.EdgeController do
 
   def download(conn, %{"id" => id} = params) do
     with {:ok, stored} <- Edges.fetch_edge(id),
-         {:ok, blob} <- Codec.decode(stored["b"], Cosmos.dictionary()),
+         {:ok, dict} <- Cosmos.dictionary_for(stored),
+         {:ok, blob} <- Codec.decode(stored["b"], dict),
          {:ok, key} <- select_version(blob, params["version"]),
          {:ok, doc} <- Codec.resolve(blob, key) do
       body = Codec.canonical_binary(doc)
