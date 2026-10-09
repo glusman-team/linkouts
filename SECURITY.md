@@ -52,8 +52,15 @@ So in production every request must carry an `X-Origin-Key` header, compared aga
 - The check is `web/lib/edge_linkouts_web/origin_check.ex`. It compares with
   `Plug.Crypto.secure_compare/2`, which is constant time, because the header is a shared secret and
   a plain `==` would leak it byte by byte through a timing oracle.
-- A missing or wrong header gets a bare `403` before any route, LiveView or store read runs. The
-  plug sits in the endpoint ahead of the parser, session and router.
+- A missing, wrong or repeated header gets a bare `403` before any route, LiveView or store read
+  runs. The plug sits in the endpoint ahead of the parser, session and router.
+- The LiveView socket transports (`/live` WebSocket and longpoll) are dispatched by Phoenix BEFORE
+  any endpoint plug, so the plug cannot see them. `web/lib/edge_linkouts_web/live_socket.ex` repeats
+  the identical check in `connect/3` (same shared function, same constant-time compare): a keyless
+  WebSocket handshake gets `403`, a keyless longpoll gets `{"status":403}` (longpoll always answers
+  HTTP 200 and carries the real status in its JSON body), and no LiveView mounts either way.
+- `Plug.Static` also runs before the check, deliberately: digested public assets (CSS, JS, images)
+  carry no data and spend no RU.
 - `GET /healthz` is exempt: `web/lib/edge_linkouts_web/health_check.ex` runs first and answers `200
   ok` without touching anything, so Fly's direct, header-less machine checks pass.
 - Cloudflare is the only intended client. A Transform Rule on the zone adds the header to every

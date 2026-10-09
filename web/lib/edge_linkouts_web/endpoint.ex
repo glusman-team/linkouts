@@ -18,9 +18,12 @@ defmodule EdgeLinkoutsWeb.Endpoint do
   # compress: permessage-deflate on the LiveView websocket. Every diff after the first
   # render travels compressed, which is most of this app's outbound bytes to clients
   # (default is off; verified in phoenix/transports/websocket.ex for 1.8.15).
-  socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options], compress: true],
-    longpoll: [connect_info: [session: @session_options]]
+  # Our socket module, not Phoenix.LiveView.Socket directly: socket dispatch runs before
+  # any plug, so the origin lockdown has to live in the socket's connect/3 (see the module
+  # doc). :x_headers is in connect_info precisely so that check can see X-Origin-Key.
+  socket "/live", EdgeLinkoutsWeb.LiveSocket,
+    websocket: [connect_info: [:x_headers, session: @session_options], compress: true],
+    longpoll: [connect_info: [:x_headers, session: @session_options]]
 
   # Serve at "/" the static files from "priv/static" directory.
   #

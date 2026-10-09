@@ -36,14 +36,25 @@ defmodule EdgeLinkoutsWeb.SecurityHeaders do
     conn = Plug.Conn.assign(conn, :csp_nonce, nonce)
 
     Phoenix.Controller.put_secure_browser_headers(conn, %{
-      "content-security-policy" => policy(host_header(conn), nonce)
+      "content-security-policy" => policy(socket_host(conn), nonce)
     })
   end
 
-  defp host_header(conn) do
+  # The configured endpoint host, not the request's Host header: reflecting an unvalidated
+  # header into the policy lets a requester widen their own connect-src to any host. The
+  # configured value is what the socket is actually served from. Falls back to conn.host
+  # only when no url host is configured (dev/test).
+  defp socket_host(conn) do
+    case EdgeLinkoutsWeb.Endpoint.config(:url)[:host] do
+      host when is_binary(host) and host != "localhost" -> host
+      _unset_or_dev -> host_with_port(conn)
+    end
+  end
+
+  defp host_with_port(conn) do
     case Plug.Conn.get_req_header(conn, "host") do
       [host] -> host
-      [] -> conn.host
+      _absent_or_repeated -> conn.host
     end
   end
 

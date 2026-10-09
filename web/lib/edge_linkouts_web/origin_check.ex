@@ -15,6 +15,12 @@ defmodule EdgeLinkoutsWeb.OriginCheck do
   shell (direnv) cannot leak into a test run the way a per-request `System.get_env/1`
   read once did.
 
+  Two things legitimately bypass this plug: `Plug.Static` (public digested assets carry no
+  data and must not gate the health of crawlers) and the LiveView socket transports, which
+  Phoenix dispatches before any plug - those repeat the identical check in
+  `EdgeLinkoutsWeb.LiveSocket.connect/3`, so nothing that can spend RU runs without the
+  key on any transport.
+
   The comparison is `Plug.Crypto.secure_compare/2` (constant time): the header is a
   shared secret, and a plain `==` would let a timing oracle leak it byte by byte.
   """
@@ -24,25 +30,30 @@ defmodule EdgeLinkoutsWeb.OriginCheck do
   @impl true
   def init(opts), do: opts
 
-  @impl true
-  def call(conn, _opts) do
+  @doc """
+  Whether a `{lowercase-name, value}` header list carries the configured origin key exactly
+  once. Both callers hand in that shape: the plug's `conn.req_headers` and the socket's
+  `connect_info[:x_headers]`. No key configured means allowed (development and tests never
+  configure one); a repeated `X-Origin-Key` is refused rather than erroring, because a
+  malformed request deserves the same bare 403 as a missing key.
+  """
+  @spec headers_allowed?([{binary(), binary()}]) :: boolean()
+  def headers_allowed?(headers) do
     case Application.get_env(:edge_linkouts, :origin_check_key) do
       nil ->
-        conn
+        true
 
       key ->
-        case Plug.Conn.get_req_header(conn, "x-origin-key") do
-          [sent] ->
-            if Plug.Crypto.secure_compare(key, sent) do
-              conn
-            else
-              forbid(conn)
-            end
-
-          [] ->
-            forbid(conn)
+        case for({"x-origin-key", value} <- headers, do: value) do
+          [sent] -> Plug.Crypto.secure_compare(key, sent)
+          _zero_or_repeated -> false
         end
     end
+  end
+
+  @impl true
+  def call(conn, _opts) do
+    if headers_allowed?(conn.req_headers), do: conn, else: forbid(conn)
   end
 
   defp forbid(conn) do

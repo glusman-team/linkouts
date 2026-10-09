@@ -37,6 +37,12 @@ defmodule EdgeLinkouts.DictsTest do
     assert {:error, {:unknown_dict, 42}} = Dicts.for_doc(%{"d" => 42}, registry)
   end
 
+  test "a non-integer d field is a per-request error, not a crash" do
+    for bad <- ["1997801878", 1.5, -1.0, [1], %{"id" => 1}, true] do
+      assert {:error, {:bad_dict_field, ^bad}} = Dicts.for_doc(%{"d" => bad}, %{})
+    end
+  end
+
   test "a malformed dictionary raises at load, not at read time" do
     tmp = Path.join(System.tmp_dir!(), "dicts-bad-#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp)

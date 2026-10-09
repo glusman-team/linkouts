@@ -79,7 +79,8 @@ defmodule EdgeLinkouts.Dicts do
   it with anything else would produce garbage, so the read fails loudly.
   """
   @spec for_doc(map(), %{non_neg_integer() => binary()}) ::
-          {:ok, binary() | nil} | {:error, {:unknown_dict, non_neg_integer()}}
+          {:ok, binary() | nil}
+          | {:error, {:unknown_dict, non_neg_integer()} | {:bad_dict_field, term()}}
   def for_doc(doc, registry \\ registry()) do
     case Map.get(doc, "d") do
       nil ->
@@ -93,6 +94,12 @@ defmodule EdgeLinkouts.Dicts do
           %{^id => dict} -> {:ok, dict}
           _ -> {:error, {:unknown_dict, id}}
         end
+
+      # The writer only emits a uint32 or omits the field; anything else is a corrupted or
+      # hand-edited document, and it gets the same per-request error as an unknown id
+      # instead of a CaseClauseError crash.
+      other ->
+        {:error, {:bad_dict_field, other}}
     end
   end
 
