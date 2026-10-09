@@ -13,8 +13,9 @@ other edge. A dictionary trained on this KG's own shape is what takes a ~250-byt
 download the free tier has to serve thousands of times a day.
 
 The dictionary is written to --out and committed to web/priv/zstd/ so the reader and the writer
-always agree. Retraining changes the dictionary id, and a blob written with one dictionary
-cannot be decoded with another, so retrain deliberately and repack afterwards.
+always agree. The dictionary id is derived from the training samples, so retraining from the
+same corpus keeps the id (a safe repack target) while a genuinely different corpus gets a new
+one; a blob written with one dictionary can never be decoded with another.
 
 ```
 linkouts train-dict [flags]

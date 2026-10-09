@@ -54,7 +54,7 @@ offline against a file store (--store file:PATH), which is how the tests and CI 
 	pf.IntVar(&g.concurrency, "concurrency", 8, "concurrent store operations")
 	pf.BoolVarP(&g.verbose, "verbose", "v", false, "log each step")
 
-	cmd.AddCommand(newInitCmd(g), newLoadCmd(g), newGetCmd(g), newProbeCmd(g),
+	cmd.AddCommand(newInitCmd(g), newLoadCmd(g), newPushCmd(g), newGetCmd(g), newProbeCmd(g),
 		newPurgeCmd(g), newStatusCmd(g), newRigCmd(g), newTrainDictCmd(g), newDocsCmd())
 	return cmd
 }

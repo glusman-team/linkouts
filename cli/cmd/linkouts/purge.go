@@ -17,12 +17,13 @@ import (
 )
 
 type purgeFlags struct {
-	all    bool
-	kg     string
-	key    string
-	dict   string
-	yes    bool
-	dryRun bool
+	all           bool
+	dropContainer bool
+	kg            string
+	key           string
+	dict          string
+	yes           bool
+	dryRun        bool
 }
 
 func newPurgeCmd(g *globals) *cobra.Command {
@@ -55,6 +56,9 @@ scan, so this works offline and in tests.
 		},
 	}
 	cmd.Flags().BoolVar(&f.all, "all", false, "wipe every document, including the reserved pool documents")
+	cmd.Flags().BoolVar(&f.dropContainer, "drop-container", false,
+		"delete the container itself WITHOUT recreating it (blue/green cutover cleanup; Cosmos only)")
+
 	cmd.Flags().StringVar(&f.kg, "kg", "", "KG to purge, by name or slug (every release of it)")
 	cmd.Flags().StringVar(&f.key, "key", "", "one release to purge, as a <kg>-<version> key")
 	cmd.Flags().StringVar(&f.dict, "dict", "", "trained zstd dictionary the blobs were written with")
@@ -65,16 +69,16 @@ scan, so this works offline and in tests.
 
 func runPurge(ctx context.Context, g *globals, f *purgeFlags) (err error) {
 	selected := 0
-	for _, on := range []bool{f.all, f.kg != "", f.key != ""} {
+	for _, on := range []bool{f.all, f.dropContainer, f.kg != "", f.key != ""} {
 		if on {
 			selected++
 		}
 	}
 	if selected == 0 {
-		return errors.New("purge needs one of --all, --kg <name>, --key <kg-version>")
+		return errors.New("purge needs one of --all, --drop-container, --kg <name>, --key <kg-version>")
 	}
 	if selected > 1 {
-		return errors.New("purge takes exactly one of --all, --kg, --key")
+		return errors.New("purge takes exactly one of --all, --drop-container, --kg, --key")
 	}
 
 	cfg, err := g.resolve()
@@ -91,6 +95,10 @@ func runPurge(ctx context.Context, g *globals, f *purgeFlags) (err error) {
 		return err
 	}
 	defer deferClose(store.Close, &err)
+
+	if f.dropContainer {
+		return dropContainer(ctx, store, f.yes)
+	}
 
 	opt := pipeline.PurgeOptions{
 		Store:     store,
@@ -199,4 +207,33 @@ func confirmPurge(storeName string, o pipeline.PurgeOptions, assumeYes bool) (bo
 	default:
 		return false, nil
 	}
+}
+
+// containerDropper is implemented by the Azure backend; file and memory stores have no
+// container to drop.
+type containerDropper interface {
+	DropOnly(ctx context.Context) error
+}
+
+// dropContainer deletes the container without recreating it - the cleanup half of a
+// blue/green cutover (`push` into the new container, flip the app, drop the old one).
+// Deleting a container is control plane work and costs no RU, unlike a document purge.
+func dropContainer(ctx context.Context, store cosmos.Store, assumeYes bool) error {
+	d, ok := store.(containerDropper)
+	if !ok {
+		return fmt.Errorf("--drop-container only works against Cosmos (this is %s)", store.Name())
+	}
+	ok, err := confirmPrompt(fmt.Sprintf("delete the WHOLE container behind %s? This cannot be undone.",
+		store.Name()), assumeYes)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("aborted")
+	}
+	if err := d.DropOnly(ctx); err != nil {
+		return err
+	}
+	printf("container dropped: %s\n", store.Name())
+	return nil
 }

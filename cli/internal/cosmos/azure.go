@@ -240,6 +240,18 @@ func scanError(err error) error {
 	return err
 }
 
+// DropOnly deletes the container and does NOT recreate it: the cleanup half of a
+// blue/green cutover (`push` staged documents into the new container, flip the app, drop the
+// old one here). Like DropAll's delete half, this is control plane and costs no RU.
+func (s *AzureStore) DropOnly(ctx context.Context) error {
+	if _, err := s.container.Delete(ctx, nil); err != nil {
+		if mapped := mapError(err); !errors.Is(mapped, ErrNotFound) {
+			return fmt.Errorf("delete container %s: %w", s.cfg.Container, mapped)
+		}
+	}
+	return nil
+}
+
 // DropAll deletes the container and provisions it again with the same partition key and indexing
 // policy. Dropping is immediate and free, which is why a wipe-and-reload uses it rather than
 // deleting 130k documents one request at a time.
@@ -249,10 +261,8 @@ func scanError(err error) error {
 // accepting it would leave the old container — and every document in it — in place while
 // reporting success.
 func (s *AzureStore) DropAll(ctx context.Context) error {
-	if _, err := s.container.Delete(ctx, nil); err != nil {
-		if mapped := mapError(err); !errors.Is(mapped, ErrNotFound) {
-			return fmt.Errorf("delete container %s: %w", s.cfg.Container, mapped)
-		}
+	if err := s.DropOnly(ctx); err != nil {
+		return err
 	}
 	var last error
 	for attempt := range dropAllRetries {

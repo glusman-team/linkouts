@@ -32,6 +32,7 @@ offline against a file store (--store file:PATH), which is how the tests and CI 
 * [linkouts load](linkouts_load.md)	 - Join KGX nodes and edges, then store one versioned blob per edge
 * [linkouts probe](linkouts_probe.md)	 - Measure the real cost of the web app's read path
 * [linkouts purge](linkouts_purge.md)	 - Delete stored data: the whole store, one KG, or one release
+* [linkouts push](linkouts_push.md)	 - Mirror a staged file store into Cosmos, one create per document
 * [linkouts rig](linkouts_rig.md)	 - Inspect a KGX file and draft a display configuration for it
 * [linkouts status](linkouts_status.md)	 - Report what the store holds and what it is configured to cost
 * [linkouts train-dict](linkouts_train-dict.md)	 - Train a zstd dictionary from a KG's own documents

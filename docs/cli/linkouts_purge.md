@@ -31,13 +31,14 @@ linkouts purge [flags]
 ### Options
 
 ```
-      --all           wipe every document, including the reserved pool documents
-      --dict string   trained zstd dictionary the blobs were written with
-      --dry-run       report what would be deleted, delete nothing
-  -h, --help          help for purge
-      --key string    one release to purge, as a <kg>-<version> key
-      --kg string     KG to purge, by name or slug (every release of it)
-  -y, --yes           do not ask for confirmation
+      --all              wipe every document, including the reserved pool documents
+      --dict string      trained zstd dictionary the blobs were written with
+      --drop-container   delete the container itself WITHOUT recreating it (blue/green cutover cleanup; Cosmos only)
+      --dry-run          report what would be deleted, delete nothing
+  -h, --help             help for purge
+      --key string       one release to purge, as a <kg>-<version> key
+      --kg string        KG to purge, by name or slug (every release of it)
+  -y, --yes              do not ask for confirmation
 ```
 
 ### Options inherited from parent commands

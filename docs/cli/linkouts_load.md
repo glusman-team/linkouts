@@ -38,7 +38,7 @@ linkouts load <kg-version-key> [flags]
       --progress          print progress lines to stderr (default true)
       --sample-size int   ids to reservoir-sample for /random (0 disables) (default 1024)
       --threads int       ClickHouse max_threads (default: NumCPU)
-      --zstd-level int    zstd compression level (default 3)
+      --zstd-level int    zstd compression level (default: 3 without a dictionary, 19 with one; dict frames are written once and read forever, so the high level is worth it)
 ```
 
 ### Options inherited from parent commands
