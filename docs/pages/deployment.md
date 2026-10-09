@@ -32,18 +32,45 @@ page is one point read of the pool index. `/random` is the index plus one releas
 `/<slug>/random?version=<label>` is one pool read and nothing else; both are cached in the node for
 fifteen minutes, so a thousand randoms cost about two reads.
 
+## Health and liveness
+
+`/healthz` is the liveness endpoint: it answers `200 ok` without touching Cosmos and is the one
+route exempt from the origin-key check, because Fly's own probes cannot carry the key.
+`fly.toml` wires it as the HTTP service check (10 s interval, 2 s timeout, 10 s grace). It says
+"the node can serve", not "Cosmos is reachable" - a Cosmos outage shows up as page errors, not as
+a failing health check, so the machine is never killed for a dependency it cannot fix.
+
 ## Replacing stored data
 
 Nothing reads a document written by an older format: it is refused by schema rather than
-mis-decoded. The migration is a reload, and the old documents go away with
+mis-decoded. The migration is a reload into a NEW container, then an atomic flip. Stage locally
+(zero RU), mirror, verify, flip, drop the old container:
 
 ```sh
-cli/bin/linkouts purge --all --yes      # or --key <slug>-<version> for one release
+# 1. Stage the release(s) into a local file store in the current format (zero RU).
+cli/bin/linkouts --store file:/tmp/staged/edges.ndjson load <kg>-<version>   --nodes ...ndjson --edges ...ndjson --dict web/priv/zstd/<kg>.<dictid>.dict
+
+# 2. Create the target container (indexing "none", partition key /id) and mirror into it.
+COSMOS_CONTAINER=edges_v2 cli/bin/linkouts init
+COSMOS_CONTAINER=edges_v2 cli/bin/linkouts push --store file:/tmp/staged/edges.ndjson --dry-run
+COSMOS_CONTAINER=edges_v2 cli/bin/linkouts push --store file:/tmp/staged/edges.ndjson --yes
+
+# 3. Verify cost and contents against the new container before anything reads it.
+COSMOS_CONTAINER=edges_v2 cli/bin/linkouts probe --n 20
+COSMOS_CONTAINER=edges_v2 cli/bin/linkouts status --check-pools
+
+# 4. Flip the running app (one secret change redeploys the machine).
+fly secrets set COSMOS_CONTAINER=edges_v2
+
+# 5. Once the site is verified on the new container, drop the old one.
+COSMOS_CONTAINER=edges cli/bin/linkouts purge --drop-container --yes
 ```
 
-A `--key` purge removes one release from the edge documents that hold it, deletes its pool and
-drops its index entry, materialising any version other deltas depend on first. `--all` wipes the
-store, including the reserved documents.
+`push` skips documents that are already identical and replaces only changed ones, so a re-run
+after an interruption is cheap. `purge --key <slug>-<version>` removes one release from the edge
+documents that hold it (deleting its pool and index entry, materialising any version other deltas
+depend on first); `purge --all` wipes a container's documents; `purge --drop-container` deletes
+the container itself.
 
 ## Order of operations
 
@@ -58,8 +85,12 @@ store, including the reserved documents.
    ```sh
    fly secrets set SECRET_KEY_BASE=... COSMOS_ENDPOINT=... COSMOS_DB=edge_linkouts \
      COSMOS_CONTAINER=edges COSMOS_READ_ONLY_KEY=... RU_BUDGET_WEB=150 \
-     PHX_HOST=linkouts.skyelanegoetz.com
+     PHX_HOST=linkouts.skyelanegoetz.com X_ORIGIN_KEY=...
    ```
+   `COSMOS_READ_ONLY_KEY` and `COSMOS_PRIMARY_CONNECTION_STRING_R` are both accepted (the
+   connection string carries the endpoint and key together); set one. `X_ORIGIN_KEY` is the
+   origin-lockdown secret every request except `/healthz` must present as `X-Origin-Key`
+   (Cloudflare adds it with a Transform Rule); without it the app refuses every request.
    A production boot without a Cosmos key fails at startup with a message saying which variable is
    missing. It does not start and serve 404s.
 4. **Deploy.** `fly deploy`, or push to `main`. `deploy.yml` runs `flyctl deploy --remote-only` for
@@ -69,6 +100,23 @@ store, including the reserved documents.
    ```sh
    fly certs add linkouts.skyelanegoetz.com
    ```
+
+## Clustering (inert at one machine)
+
+The app is cluster-ready but runs one machine, where every cluster path is a no-op: the
+partitioned cache's ring holds only this node, and `CLUSTER_QUERY` resolves to the machine's own
+address. `fly.toml` already sets `CLUSTER_QUERY=edge-linkouts.internal`; `web/rel/env.sh.eex`
+names nodes `<app>@<fly-private-ip>` over `inet6_tcp` when `FLY_PRIVATE_IP` is present. To scale
+out, the whole runbook is two commands (see `docs/adr/0004-clustering.md`):
+
+```sh
+fly secrets set RELEASE_COOKIE=<random>   # releases read it natively at boot
+fly scale count 2
+```
+
+Node discovery (libcluster DNSPoll), the ring (nebulex_distributed Partitioned), owner-routed
+read coalescing and the per-node RU budget split (`RU_BUDGET_WEB / live node count`) all follow
+automatically. The RU total stays at `RU_BUDGET_WEB` regardless of node count.
 
 ## If you trained a dictionary
 

@@ -79,7 +79,9 @@ defmodule EdgeLinkouts.MixProject do
        depth: 1},
       {:bandit, "~> 1.5"},
       # Deliberately absent: jason (built-in JSON), telemetry_metrics/poller (no dashboard),
-      # dns_cluster (no clustering), swoosh/req/gettext/ecto (see PLAN.md).
+      # dns_cluster (Fly's DNS-based clustering; libcluster + nebulex_distributed are used
+      # instead, see docs/adr/0004-clustering.md), swoosh/req/gettext/ecto (no mail, no HTTP
+      # client beyond Finch, no i18n, no SQL).
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:floki, "~> 0.38", only: :test},
       # Test-only exception to "no NIFs": lazy_html wraps the Lexbor C library. LiveView 1.2's

@@ -4,6 +4,9 @@ Human-readable pages for individual knowledge-graph edges. Give it an edge UUID 
 shows what the edge asserts, the evidence behind it, where it came from, and how it
 changed across KG releases.
 
+Live: https://linkouts.skyelanegoetz.com (currently serving `infores:drugapprovals-kp`
+releases 1.23.3 and 1.23.4).
+
 - **`cli/`**: `linkouts`, a Go CLI. It reads KGX `nodes.ndjson` and `edges.ndjson`,
   joins node names and categories onto edges using an embedded ClickHouse engine (chDB),
   compresses each edge's versions into a single zstd blob, and writes them to Azure
@@ -16,8 +19,34 @@ changed across KG releases.
   file, not writing code.
 - **`docs/`**: ExDoc guides plus the generated CLI reference.
 
-> Status: built and verified locally. Deployment runs through `deploy.yml` and is
-> dormant until the steps in [Deploy](#deploy) are done.
+> Status: live. `deploy.yml` deploys every push to `main` that touches `web/`, `kgs/`,
+> `Dockerfile` or `fly.toml`. The runbook (secrets, DNS, cutover, clustering) is
+> [docs/pages/deployment.md](docs/pages/deployment.md).
+
+## Architecture
+
+```
+KGX release (nodes.ndjson + edges.ndjson)
+        |
+        v
+  cli/ linkouts  -- joins node data onto edges with an embedded ClickHouse (chDB),
+        |           compresses every version of an edge into one zstd blob against a
+        |           trained dictionary, writes one document per edge
+        v
+  Azure Cosmos DB  -- container partitioned on /id, indexing policy "none",
+        |              every read is a point read by id (1 RU up to 1 KB)
+        v
+  web/ Phoenix LiveView  -- decodes the blob, renders the edge with a per-release
+        |                    toggle and diff; kgs/*.exs decide what each KG shows
+        v
+  Cloudflare -> Fly.io (one machine, cluster-ready) -> browser
+```
+
+The read path never queries Cosmos: it point-reads by id, coalesces concurrent reads of
+the same id, caches results per node, and enforces a strict RU budget
+(`RU_BUDGET_WEB`) so traffic can never starve ingestion. Details:
+[docs/pages/storage-format.md](docs/pages/storage-format.md) and
+[docs/adr/](docs/adr/).
 
 ## Quickstart (local, no cloud)
 
@@ -27,6 +56,11 @@ make check          # full offline gate: fmt, lint, compile, tests, kgs validati
 make local-load     # encode the DAKP sample to tmp/edges.local.ndjson (no Cosmos)
 make local-web      # Phoenix on http://localhost:4000 against that file
 ```
+
+Contributors: [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, what we want (KG display
+configs in `kgs/`, small web fixes, docs) and what is maintainer-only (the CLI and
+deployment). Security reports go through
+[SECURITY.md](SECURITY.md), not a public issue.
 
 ## Loading a KG into Cosmos
 
@@ -58,22 +92,16 @@ gitignored. See `.envrc.example` for every variable.
 | `RU_BUDGET_CLI`, `RU_BUDGET_WEB` | CLI / web | default 750 / 150 (75% / 15% of the free tier) |
 | `DEDUPE_TTL_MS`, `POOL_TTL_MS` | web | edge / pool cache TTLs (default 30000 / 900000) |
 | `CHDB_CACHE_DIR` | CLI | where the embedded ClickHouse engine is extracted |
+| `X_ORIGIN_KEY` | web | origin lockdown: every request except `/healthz` must carry it as `X-Origin-Key` (Cloudflare sets it) |
 | `SECRET_KEY_BASE` | web (prod) | `mix phx.gen.secret` |
 | `PHX_HOST` | web (prod) | `linkouts.skyelanegoetz.com` |
 
 ## Deploy
 
-Not exercised yet. These are the steps for when you're ready:
-
-1. Create the Fly app: `fly launch --name edge-linkouts --region lax --no-deploy`.
-   Azure West US 2 is in Quincy, WA, and Fly has retired `sea`, so `lax` is the
-   closest region.
-2. Set secrets: `fly secrets set SECRET_KEY_BASE=… COSMOS_PRIMARY_CONNECTION_STRING_R=…`
-3. Create the CI token: `fly tokens create deploy -x 90d`, then save it as the GitHub
-   repo secret `FLY_API_TOKEN`.
-4. Push to `main`. `deploy.yml` runs `flyctl deploy --remote-only`.
-5. Set up Cloudflare. Add a CNAME `linkouts` → `edge-linkouts.fly.dev`, proxied, with
-   SSL set to Full (strict). Then run `fly certs add linkouts.skyelanegoetz.com`.
+Deployed and live; `deploy.yml` runs `flyctl deploy --remote-only` on every push to
+`main` that touches `web/`, `kgs/`, `Dockerfile`, `fly.toml` or the workflow itself.
+The full runbook (first-time app creation, secrets, Cloudflare/DNS, the storage cutover,
+clustering env vars) is [docs/pages/deployment.md](docs/pages/deployment.md).
 
 ## Development
 

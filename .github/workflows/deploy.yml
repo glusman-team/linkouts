@@ -1,5 +1,6 @@
-# DORMANT until PLAN.md STOP 4: needs the FLY_API_TOKEN repo secret
-# (`fly tokens create deploy -x 90d`). Path-filtered so CLI-only changes don't redeploy.
+# Deploys on every push to main that touches web/**, kgs/**, Dockerfile, fly.toml, or this
+# workflow, running `flyctl deploy --remote-only` with the FLY_API_TOKEN repo secret.
+# Path-filtered so CLI-only changes don't redeploy.
 name: Deploy
 
 on:

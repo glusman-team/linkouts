@@ -14,9 +14,12 @@ Go, Elixir/OTP 28 and `make`. On NixOS these come from the dev shell. The CLI is
 make check
 ```
 
-`make check` is what CI runs: formatting, lint, the Go tests with `-race`, the Elixir tests, and
-the cross-language contract test. It never needs network access or credentials. If it is green
-locally, CI is green.
+`make check` is the offline gate: formatting, lint, compilation, the Go tests with `-race`, the
+Elixir tests and the `kgs/` config validation. It never needs network access or credentials.
+CI runs three more steps that `make check` does not: `make contract-check` (the cross-language
+golden-document test), `make ex-test-cluster` (the two-node cluster proofs) and
+`make docs-check` (the generated docs are current). Run those too before pushing a change that
+touches the wire format, the read path or the docs.
 
 ## 2. Load the fixtures into a local file store
 

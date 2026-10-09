@@ -28,7 +28,8 @@ web app re-encodes for KGX download.
   looks like: an old reader never sees a field it cannot interpret, and a new reader treats
   an absent `k` as "unattributed" rather than as a graph named `""`.
 
-Deviation from PLAN.md's `{id, b}` sketch: the `d` field is added. A blob compressed
+Deviation from the original `{id, b}` sketch (an untracked planning note): the `d`
+field is added. A blob compressed
 against a trained dictionary cannot be decoded without it, and there is no other place to
 record which dictionary was in force when the document was written. The `k` field is added
 for the same reason: the identity of the graph an edge came from is not recoverable from
@@ -82,7 +83,7 @@ followed by a reload is the explicit one.
 }
 ```
 
-Deviation from PLAN.md: the version map is wrapped in an envelope carrying `schema`, so a
+Deviation from that sketch: the version map is wrapped in an envelope carrying `schema`, so a
 reader can refuse a format it does not implement rather than mis-decoding one. A reader
 must reject any `schema` it does not know exactly.
 

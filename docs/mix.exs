@@ -37,6 +37,7 @@ defmodule EdgeLinkoutsDocs.MixProject do
 
   defp docs do
     cli_pages = Path.wildcard("cli/*.md") |> Enum.sort()
+    adr_pages = Path.wildcard("adr/*.md") |> Enum.sort()
 
     [
       main: "readme",
@@ -51,9 +52,10 @@ defmodule EdgeLinkoutsDocs.MixProject do
           "pages/the-default-config.md",
           "pages/storage-format.md",
           "pages/deployment.md"
-        ] ++ cli_pages,
+        ] ++ adr_pages ++ cli_pages,
       groups_for_extras: [
         Guides: ~r{pages/},
+        Decisions: ~r{adr/},
         "CLI reference": ~r{cli/}
       ],
       # The API section documents what a config author or contributor touches. The web layer and
@@ -68,24 +70,27 @@ defmodule EdgeLinkoutsDocs.MixProject do
           String.starts_with?(name, "EdgeLinkouts.Cosmos") or
           name in [
             "EdgeLinkouts.Codec",
+            "EdgeLinkouts.Dicts",
             "EdgeLinkouts.RateLimiter",
             "EdgeLinkouts.Cache",
+            "EdgeLinkouts.Cluster",
             "EdgeLinkouts.Dedupe",
             "Mix.Tasks.Linkouts.Check"
           ]
       end,
       groups_for_modules: [
         "Display configs": [~r/EdgeLinkouts\.Display/],
-        Storage: [EdgeLinkouts.Codec],
+        Storage: [EdgeLinkouts.Codec, EdgeLinkouts.Dicts],
         "Read path": [
           ~r/EdgeLinkouts\.Cosmos/,
           EdgeLinkouts.RateLimiter,
           EdgeLinkouts.Cache,
+          EdgeLinkouts.Cluster,
           EdgeLinkouts.Dedupe
         ],
         Tooling: [Mix.Tasks.Linkouts.Check]
       ],
-      skip_undefined_reference_warnings_on: cli_pages
+      skip_undefined_reference_warnings_on: cli_pages ++ adr_pages
     ]
   end
 end

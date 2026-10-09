@@ -1,0 +1,40 @@
+# Dependabot version updates. Security updates are configured separately in the repo UI.
+#
+# Three ecosystems, weekly, grouped so one PR carries the routine bumps and a major stays on its
+# own for review. The maintainer handles every PR, so no reviewers or assignees are set.
+# `make check` is the gate for whatever these PRs touch.
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/cli"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      go-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "mix"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      hex-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"

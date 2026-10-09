@@ -3,7 +3,7 @@ defmodule EdgeLinkouts.RateLimiterTest do
 
   alias EdgeLinkouts.RateLimiter
 
-  # Injectable clock (PLAN.md: throttle tests do not sleep). Bump it to slide the window.
+  # Injectable clock (throttle tests do not sleep). Bump it to slide the window.
   setup do
     clock = start_supervised!({Agent, fn -> 0 end})
     now = fn -> Agent.get(clock, & &1) end

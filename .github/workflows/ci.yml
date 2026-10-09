@@ -34,6 +34,11 @@ jobs:
         run: make go-test
       - name: Fuzz smoke
         run: cd cli && go test -run='^$' -fuzz=FuzzDelta -fuzztime=10s ./internal/codec/
+      # Informational: the remaining findings are Go stdlib advisories fixed in the
+      # unreleased go1.26.9. Flip to blocking after that toolchain bump.
+      - name: govulncheck (informational)
+        continue-on-error: true
+        run: make go-vulncheck
 
   elixir:
     runs-on: ubuntu-latest
@@ -61,6 +66,7 @@ jobs:
 
       - run: make ex-test-cluster
       - run: make kgs-check
+      - run: make ex-audit
 
   docs:
     runs-on: ubuntu-latest

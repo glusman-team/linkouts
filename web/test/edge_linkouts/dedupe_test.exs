@@ -33,7 +33,7 @@ defmodule EdgeLinkouts.DedupeTest do
       |> Task.await_many()
 
     assert Enum.uniq(results) == [{:ok, doc}]
-    # The point: one read per page view, not one per component (PLAN.md D5).
+    # The point: one read per page view, not one per component.
     assert Cosmos.Fake.calls(fake) == [{:get_edge, id}]
   end
 

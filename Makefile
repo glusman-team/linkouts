@@ -2,7 +2,9 @@
 # so a green `make check` locally means a green CI run.
 #
 # Everything here is OFFLINE: no target talks to Cosmos, Fly or Cloudflare except the
-# explicitly named `smoke-*` targets, which are never run by CI or hooks.
+# explicitly named `smoke-*` targets, which are never run by CI or hooks. The two
+# `*-audit`/`*-vulncheck` security targets also reach the network (public vulnerability
+# databases); like `smoke-*` they are never part of `make check` or the hooks.
 
 SHELL := bash
 .SHELLFLAGS := -euo pipefail -c
@@ -27,7 +29,8 @@ DAKP_NEW ?= 1.16.0
 DAKP_EDGES ?= $(DAKP_DIR)/$(DAKP_OLD)/drug_approvals_kg_edges_v$(DAKP_OLD).ndjson
 DAKP_NODES ?= $(DAKP_DIR)/$(DAKP_OLD)/drug_approvals_kg_nodes_v$(DAKP_OLD).ndjson
 
-# Hard ceiling for the whole offline gate (seconds); see PLAN.md "Testing".
+# Hard ceiling for the whole offline gate (seconds), so a hung test fails the build
+# instead of burning CI minutes.
 CHECK_BUDGET ?= 60
 
 .PHONY: help
@@ -93,7 +96,7 @@ ex-test: ## mix test (Cosmos stubbed, no network)
 	cd $(WEB) && mix test --warnings-as-errors
 
 ex-test-cluster: ## two-node cluster proofs (starts distribution on loopback)
-	cd $(WEB) && mix test --warnings-as-errors --include cluster --only cluster
+	cd $(WEB) && mix test --warnings-as-errors --only cluster
 
 kgs-check: ## Validate every kgs/*.exs and render the golden fixtures
 	cd $(WEB) && mix linkouts.check
@@ -223,6 +226,19 @@ smoke-probe: build ## [CLOUD] Measure RU per op with 20 throwaway docs
 	$(BIN) probe --n 20
 
 # ---------------------------------------------------------------- housekeeping
+
+# Security advisories (network-touching, CI-only; see the header note).
+.PHONY: ex-audit go-vulncheck
+
+ex-audit: ## retired/vulnerable hex packages (mix hex.audit)
+	cd $(WEB) && mix hex.audit
+
+# govulncheck over the CLI. Currently informational: the 9 remaining findings are Go
+# stdlib advisories (net/http, crypto/tls, mime/multipart) fixed in go1.26.9, which is not
+# released yet; x/net and x/text were bumped to clear the dependency-level ones. CI runs
+# this with continue-on-error until the toolchain bump lands.
+go-vulncheck: ## govulncheck over cli/ (informational; stdlib fixes pending go1.26.9)
+	cd $(CLI) && go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 .PHONY: clean
 clean: ## Remove build outputs

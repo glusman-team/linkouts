@@ -18,6 +18,29 @@ Cosmos holds one document per edge. Its `id` is the edge's KGX `id`:
   unchanged. It sits outside the frame on purpose: "which graph is this?" should not cost a
   decompression, and the same slug names the graph in a URL and in a pool document id.
 
+### Dictionaries
+
+`b` is compressed against a trained zstd dictionary at level 19, not plain zstd. Edge documents
+are highly redundant across the corpus (same property names, node categories, evidence shapes), so
+one 128 KiB dictionary per KG roughly halves stored size: the live corpus went from ratio 0.672
+(plain, level 3) to 0.321 (dictionary, level 19), and 91.1% of documents fit in the 1 KB that
+costs a single RU.
+
+- The dictionary id in `d` is FNV-1a 32 over the training samples, mapped into the legal zstd
+  content-id range, so it is content-derived and cannot silently collide across KGs. The same id
+  is written into the zstd frame header; a frame whose header id disagrees with `d` is refused.
+- The web app resolves ids through `EdgeLinkouts.Dicts`, a registry of every
+  `web/priv/zstd/<slug>.<id>.dict` file, loaded at boot. Boot fails loudly on a non-dictionary
+  file or a duplicate id rather than serving a store it cannot decode.
+- An unknown `d` (a document written with a dictionary this deploy does not ship) decodes to a
+  clear error naming the id; it never crashes the request and never mis-decodes.
+- The CLI must be given the matching `--dict` when loading; `load` refuses to repack a document
+  whose stored dictionary id differs from the run's, so a mixed-format store cannot be created by
+  accident.
+
+The full decision record, including rejected alternatives (base85, inline dictionaries, level 22,
+per-release dictionaries, in-place upgrade) is `docs/adr/0003-storage-v2.md`.
+
 The container is partitioned on `/id` and its indexing policy is `none`: there is no indexed path
 at all. Every read the app makes is a point read by id, which is the cheapest Cosmos operation,
 and no query is ever issued, because without indexes a query would be a full scan at full price.
