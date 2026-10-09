@@ -17,21 +17,7 @@ defmodule EdgeLinkouts.ClusterTwoNodeTest do
   alias EdgeLinkouts.{Cache, Cluster, Dedupe, RateLimiter}
 
   setup do
-    # Shortnames on the machine hostname (resolved via /etc/hosts); 127.0.0.1 as a host
-    # only works with longnames, which OTP refuses when the local hostname has no domain.
-    # A runner whose hostname does not resolve skips these tests with a reason instead of
-    # failing CI on an environment fact.
-    unless Node.alive?() do
-      {:ok, host} = :inet.gethostname()
-
-      case Node.start(:"main@#{host}", :shortnames) do
-        {:ok, _} ->
-          :ok
-
-        {:error, reason} ->
-          {:skip, "cannot start distribution on #{host} (#{inspect(reason)})"}
-      end
-    end
+    ensure_distribution!()
 
     # The test app booted with distribution off, so the main cache's ring holds a stale
     # :nonode@nohost member. Restart it under the now-live distribution (in production the
@@ -139,6 +125,46 @@ defmodule EdgeLinkouts.ClusterTwoNodeTest do
   # cache ring can carry a stale :nonode@nohost member until the next membership event
   # heals it. Production boots distribution before the application, so the artifact is
   # impossible there; tolerate exactly that one entry here and nothing else.
+  # These tests need a distributed node. Two environment facts break that on a fresh
+  # runner, and both are fixed here rather than by skipping (ExUnit does not honor
+  # {:skip, reason} returned from setup, so a "skip" would run the test anyway):
+  #
+  # - epmd is usually not running and not on PATH, so Node.start cannot spawn it. Start it
+  #   from the emulator's own erts bin, which :os.find_executable does locate.
+  # - a shortname node cannot use a dotted host, and OTP refuses longnames when the local
+  #   hostname has no domain, so the name is <main>@<hostname> over shortnames.
+  defp ensure_distribution! do
+    if Node.alive?() do
+      :ok
+    else
+      start_epmd()
+      {:ok, host} = :inet.gethostname()
+
+      case Node.start(:"main@#{host}", :shortnames) do
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          raise """
+          cannot start Erlang distribution on #{host} (#{inspect(reason)}); the two-node           cluster tests need it. Start epmd (or put it on PATH) and make sure the hostname           resolves in /etc/hosts, or drop --only cluster to run the rest of the suite.
+          """
+      end
+    end
+  end
+
+  defp start_epmd do
+    case :os.find_executable(~c"epmd") do
+      false ->
+        :ok
+
+      path ->
+        # -daemon forks and exits 0, including when an epmd is already running.
+        # find_executable returns a charlist; System.cmd wants a binary path.
+        _ = System.cmd(List.to_string(path), ["-daemon"], stderr_to_stdout: true)
+        :ok
+    end
+  end
+
   defp assert_ring(expected) do
     assert_eventually(fn ->
       ring = Cache.nodes()
