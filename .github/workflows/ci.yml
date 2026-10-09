@@ -58,6 +58,8 @@ jobs:
       - run: make ex-compile
       - run: make ex-lint
       - run: make ex-test
+
+      - run: make ex-test-cluster
       - run: make kgs-check
 
   docs:

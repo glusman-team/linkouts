@@ -36,7 +36,10 @@ defmodule EdgeLinkouts.Dedupe do
   GenServer; the server only writes, and the write is a synchronous call before the leader
   returns, so a connected mount that follows the static render cannot race past the store.
 
-  Single node by design: the app runs as one Fly machine, so there is no `:global`.
+  Clustering: a caller may pass an MFA tuple instead of a closure. The tuple routes the read
+  to the id's owner on the partitioned cache's ring, so the whole cluster shares one
+  in-flight read per id; closures stay local (see `execute/4`). Failures to route fall back
+  to local execution, so a partition costs an extra read, never an error page. See ADR 0004.
   """
 
   use GenServer
@@ -67,8 +70,64 @@ defmodule EdgeLinkouts.Dedupe do
     The override is ignored when the server's own `:ttl_ms` is zero, which is how tests turn
     caching off: a caller must not be able to switch it back on behind their back.
   """
-  @spec execute(term(), (-> result), GenServer.name(), keyword()) :: result when result: var
-  def execute(id, fun, server \\ __MODULE__, opts \\ []) do
+  @spec execute(term(), (-> result) | mfa(), GenServer.name(), keyword()) :: result
+        when result: var
+  def execute(id, fun, server \\ __MODULE__, opts \\ [])
+
+  # An MFA descriptor can route to the key's ring owner, so N nodes share one in-flight read
+  # per key, not one per node (the partitioned cache's ring is the single source of owner
+  # truth). A closure stays local: sending a compiled anonymous fun to a node running a
+  # different code version is undefined behavior, which a rolling deploy would hit exactly
+  # when the fleet is mixed.
+  def execute(id, {mod, fun_name, args} = mfa, server, opts)
+      when is_atom(mod) and is_atom(fun_name) and is_list(args) do
+    case owner_for(server, id) do
+      {:remote, owner} -> remote_read(owner, id, mfa, server, opts)
+      :local -> run_local(id, mfa, server, opts)
+    end
+  end
+
+  def execute(id, fun, server, opts) when is_function(fun, 0) do
+    execute_locally(id, fun, server, opts)
+  end
+
+  @doc false
+  # Called through :erpc by peer nodes: coalesce on the owner, exactly like a local caller.
+  def run_local(id, {mod, fun_name, args}, server, opts) do
+    execute_locally(id, fn -> apply(mod, fun_name, args) end, server, opts)
+  end
+
+  defp remote_read(owner, id, mfa, server, opts) do
+    :erpc.call(owner, __MODULE__, :run_local, [id, mfa, server, opts], 10_000)
+  catch
+    # The owner left the cluster mid-call, is unreachable, or runs code from before this
+    # function existed (rolling deploy): the read must still work, so run it locally.
+    :exit, _reason -> run_local(id, mfa, server, opts)
+  end
+
+  # The key's owner is the node the partitioned cache would store it on. Any failure to
+  # answer (cache not started, ring not formed yet) degrades to local execution.
+  defp owner_for(server, id) do
+    case cache_for(server) do
+      cache when is_atom(cache) ->
+        try do
+          case EdgeLinkouts.Cache.find_node(cache, id) do
+            {:ok, owner} when owner == node() -> :local
+            {:ok, owner} -> {:remote, owner}
+            _other -> :local
+          end
+        rescue
+          _ -> :local
+        catch
+          :exit, _ -> :local
+        end
+
+      _not_running ->
+        :local
+    end
+  end
+
+  defp execute_locally(id, fun, server, opts) do
     case recent(server, id) do
       {:ok, result} ->
         result

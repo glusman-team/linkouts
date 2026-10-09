@@ -56,6 +56,11 @@ defmodule EdgeLinkouts.MixProject do
       # :shards (default :ets backend is enough), :ex2ms (no query macros).
       {:nebulex, "~> 3.0"},
       {:nebulex_local, "~> 3.0"},
+      # Distributed cache + node discovery. Present but inert at one node: the Partitioned
+      # cache's ring of one is the local primary, and libcluster only starts a topology when
+      # CLUSTER_QUERY is set (config/runtime.exs). See docs/adr/0004.
+      {:nebulex_distributed, "~> 3.2"},
+      {:libcluster, "~> 3.5"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.5", runtime: Mix.env() == :dev},
       {:heroicons,

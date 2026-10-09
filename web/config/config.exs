@@ -28,14 +28,18 @@ config :edge_linkouts,
 
 # The recent-results cache behind EdgeLinkouts.Dedupe (see that module and EdgeLinkouts.Cache).
 config :edge_linkouts, EdgeLinkouts.Cache,
-  # Generation length: equal to the longest TTL class, so a 15 min entry dies with its
-  # generation at the latest; shorter classes expire on read long before that.
-  gc_interval: :timer.minutes(15),
-  # Same bound the old hand-rolled table had, now with real eviction behind it.
-  max_size: 10_000,
-  # Starting guess for a dev-sized machine; revisit when the Fly machine size is chosen.
-  allocated_memory: 64 * 1024 * 1024,
-  gc_memory_check_interval: :timer.seconds(10)
+  # The partitioned adapter's local store: per-node primary storage with the same eviction
+  # bounds the old local-only cache had. The distributed layer adds no memory at N=1.
+  primary: [
+    # Generation length: equal to the longest TTL class, so a 15 min entry dies with its
+    # generation at the latest; shorter classes expire on read long before that.
+    gc_interval: :timer.minutes(15),
+    # Same bound the old hand-rolled table had, now with real eviction behind it.
+    max_size: 10_000,
+    # Starting guess for a dev-sized machine; revisit when the Fly machine size is chosen.
+    allocated_memory: 64 * 1024 * 1024,
+    gc_memory_check_interval: :timer.seconds(10)
+  ]
 
 # Configure the endpoint
 config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,

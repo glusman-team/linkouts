@@ -12,11 +12,22 @@ defmodule EdgeLinkouts.CacheTest do
 
   defp start_cache(opts \\ []) do
     name = :"cache_#{System.unique_integer([:positive])}"
-    start_supervised!({Cache, Keyword.merge([name: name], opts)})
+    # Local-storage options (gc tuning) live under :primary now that the adapter is
+    # partitioned; the distributed layer's own options stay at the top level.
+    {primary, opts} = Keyword.split(opts, [:gc_cleanup_delay, :gc_interval, :max_size])
+    start_supervised!({Cache, [name: name, primary: primary] ++ opts})
     name
   end
 
   defp with_cache(cache, fun), do: Cache.with_dynamic_cache(cache, fun)
+
+  # Generation GC lives in the primary storage (the Local adapter); the partitioned cache
+  # has no generations of its own, so the test drives the primary by its derived name.
+  defp new_generation(cache) do
+    primary = Module.concat(Macro.camelize("#{cache}"), "Primary")
+
+    Cache.__primary__().with_dynamic_cache(primary, fn -> Cache.__primary__().new_generation() end)
+  end
 
   test "an expired entry reads as a miss" do
     cache = start_cache()
@@ -33,8 +44,8 @@ defmodule EdgeLinkouts.CacheTest do
 
     :ok = with_cache(cache, fn -> Cache.put("k", :v, ttl: :timer.hours(1)) end)
     # Two swaps with no reads: "k" never moves generations, so its generation is purged.
-    _ = with_cache(cache, fn -> Cache.new_generation() end)
-    _ = with_cache(cache, fn -> Cache.new_generation() end)
+    _ = new_generation(cache)
+    _ = new_generation(cache)
 
     Process.sleep(100)
     assert {:error, %Nebulex.KeyError{}} = with_cache(cache, fn -> Cache.fetch("k") end)
@@ -47,12 +58,12 @@ defmodule EdgeLinkouts.CacheTest do
     :ok = with_cache(cache, fn -> Cache.put("cold", :v, ttl: :timer.hours(1)) end)
 
     # First swap: both entries fall into the old generation.
-    _ = with_cache(cache, fn -> Cache.new_generation() end)
+    _ = new_generation(cache)
     # Reading "hot" moves it into the newer generation; "cold" stays behind.
     assert {:ok, :v} = with_cache(cache, fn -> Cache.fetch("hot") end)
 
     # Second swap schedules the old generation's deletion; only the promoted entry survives it.
-    _ = with_cache(cache, fn -> Cache.new_generation() end)
+    _ = new_generation(cache)
     Process.sleep(100)
 
     assert {:ok, :v} = with_cache(cache, fn -> Cache.fetch("hot") end)

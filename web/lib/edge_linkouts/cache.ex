@@ -26,7 +26,12 @@ defmodule EdgeLinkouts.Cache do
   Single node by design, like everything else on this read path.
   """
 
+  # Partitioned over a local primary: at one node the ring holds only this node and every
+  # operation is the old local behavior; the moment a second node joins, each key has one
+  # owner and the whole cluster shares the cached result instead of re-reading Cosmos
+  # (the owner is also where `EdgeLinkouts.Dedupe` coalesces the miss). Multilevel L1+L2 was
+  # rejected at N=1: it duplicates memory and adds a hop for zero RU saving - see ADR 0004.
   use Nebulex.Cache,
     otp_app: :edge_linkouts,
-    adapter: Nebulex.Adapters.Local
+    adapter: Nebulex.Adapters.Partitioned
 end

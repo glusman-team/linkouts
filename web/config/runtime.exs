@@ -1,5 +1,24 @@
 import Config
 
+# Cluster discovery (inert when unset): CLUSTER_QUERY is a DNS name that resolves to the
+# peer nodes' addresses - on Fly, "<app>.internal" from fly.toml. node_basename is the
+# node-name prefix before the address. See web/rel/env.sh.eex for how the node name and the
+# release cookie are set in production.
+if query = System.get_env("CLUSTER_QUERY") do
+  config :libcluster,
+    topologies: [
+      fly: [
+        strategy: Cluster.Strategy.DNSPoll,
+        config: [
+          query: query,
+          node_basename:
+            System.get_env("CLUSTER_NODE_BASENAME") ||
+              System.get_env("FLY_APP_NAME") || "edge_linkouts"
+        ]
+      ]
+    ]
+end
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration

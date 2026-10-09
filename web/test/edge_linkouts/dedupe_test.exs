@@ -151,7 +151,7 @@ defmodule EdgeLinkouts.DedupeTest do
       n = System.unique_integer([:positive])
       cache = :"cache_#{n}"
       name = :"dedupe_#{n}"
-      start_supervised!({Cache, name: cache, gc_interval: :timer.hours(1)})
+      start_supervised!({Cache, name: cache, primary: [gc_interval: :timer.hours(1)]})
 
       opts =
         opts

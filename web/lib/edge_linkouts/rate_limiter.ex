@@ -10,6 +10,11 @@ defmodule EdgeLinkouts.RateLimiter do
   - `charge/2` after the response, with the *actual* `x-ms-request-charge` (Cosmos bills
     404s and 429s too, and a refused request is charged nothing).
 
+  On a cluster the limiter stays per-node and the budget is divided by the live node count
+  (`EdgeLinkouts.Cluster.node_count/0`, one atomics read): the strict total is
+  RU_BUDGET_WEB at any N, with no cross-node coordination to fail. A node join or leave
+  briefly mis-splits by a window at worst.
+
   The window is not a leaky bucket: a burst spends its budget and is blocked for at most
   one second, never forever. The window state is one packed 64-bit atomics word
   (window start milliseconds in the high 32 bits, RU spent in the low 32), updated with
@@ -40,6 +45,7 @@ defmodule EdgeLinkouts.RateLimiter do
   @spec allow?(number(), GenServer.name()) :: boolean()
   def allow?(estimate, server \\ __MODULE__) do
     {ref, budget, now_fun} = :persistent_term.get(key(server))
+    budget = per_node_budget(budget)
     now = now_fun.()
     word = :atomics.get(ref, 1)
 
@@ -73,6 +79,7 @@ defmodule EdgeLinkouts.RateLimiter do
         }
   def stats(server \\ __MODULE__) do
     {ref, budget, now_fun} = :persistent_term.get(key(server))
+    budget = per_node_budget(budget)
     word = :atomics.get(ref, 1)
 
     spend =
@@ -137,6 +144,12 @@ defmodule EdgeLinkouts.RateLimiter do
     :persistent_term.put(key(Keyword.fetch!(opts, :name)), {ref, budget, now_fun})
 
     {:ok, %{ref: ref}}
+  end
+
+  # Integer division keeps the cluster-wide sum at or under the configured total; the
+  # minimum of 1 RU/s keeps a node functional when the budget is smaller than the cluster.
+  defp per_node_budget(total) do
+    max(div(total, EdgeLinkouts.Cluster.node_count()), 1)
   end
 
   defp key(server), do: {__MODULE__, server}

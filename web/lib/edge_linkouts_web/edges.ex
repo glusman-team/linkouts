@@ -37,7 +37,7 @@ defmodule EdgeLinkoutsWeb.Edges do
   @spec fetch_edge(String.t()) :: {:ok, stored :: map()} | {:error, term()}
   def fetch_edge(id) when is_binary(id) do
     if valid_id?(id) do
-      read(id, fn -> Cosmos.impl().get_edge(id) end)
+      read(id, {__MODULE__, :backend_edge, [id]})
     else
       {:error, :not_found}
     end
@@ -61,15 +61,7 @@ defmodule EdgeLinkoutsWeb.Edges do
   def fetch_pool_index do
     id = Cosmos.pool_index_id()
 
-    read(
-      id,
-      fn ->
-        with {:ok, doc} <- Cosmos.impl().get_edge(id) do
-          Cosmos.decode_pool_index_doc(doc)
-        end
-      end,
-      ttl_ms: pool_ttl_ms()
-    )
+    read(id, {__MODULE__, :backend_pool_index, [id]}, ttl_ms: pool_ttl_ms())
   end
 
   @doc """
@@ -83,15 +75,7 @@ defmodule EdgeLinkoutsWeb.Edges do
   def fetch_pool(slug, version_label) when is_binary(slug) and is_binary(version_label) do
     id = Cosmos.pool_doc_id(slug, version_label)
 
-    read(
-      id,
-      fn ->
-        with {:ok, doc} <- Cosmos.impl().get_edge(id) do
-          Cosmos.decode_pool_doc(doc)
-        end
-      end,
-      ttl_ms: pool_ttl_ms()
-    )
+    read(id, {__MODULE__, :backend_pool, [id]}, ttl_ms: pool_ttl_ms())
   end
 
   defp pool_ttl_ms do
@@ -112,6 +96,26 @@ defmodule EdgeLinkoutsWeb.Edges do
       {:error, reason} when reason == :budget_exhausted -> {:error, :rate_limited}
       {:error, {:throttled, _retry_after_ms}} -> {:error, :rate_limited}
       other -> other
+    end
+  end
+
+  # The backend calls, as named functions: the cluster read path can only route a plain MFA
+  # across nodes (an anonymous closure carries the caller's compiled module version, which is
+  # undefined behavior during a rolling deploy), so these are the descriptors' targets.
+  @doc false
+  def backend_edge(id), do: Cosmos.impl().get_edge(id)
+
+  @doc false
+  def backend_pool_index(id) do
+    with {:ok, doc} <- Cosmos.impl().get_edge(id) do
+      Cosmos.decode_pool_index_doc(doc)
+    end
+  end
+
+  @doc false
+  def backend_pool(id) do
+    with {:ok, doc} <- Cosmos.impl().get_edge(id) do
+      Cosmos.decode_pool_doc(doc)
     end
   end
 end

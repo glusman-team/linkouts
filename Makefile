@@ -92,6 +92,9 @@ ex-lint: ## credo --strict
 ex-test: ## mix test (Cosmos stubbed, no network)
 	cd $(WEB) && mix test --warnings-as-errors
 
+ex-test-cluster: ## two-node cluster proofs (starts distribution on loopback)
+	cd $(WEB) && mix test --warnings-as-errors --include cluster --only cluster
+
 kgs-check: ## Validate every kgs/*.exs and render the golden fixtures
 	cd $(WEB) && mix linkouts.check
 
