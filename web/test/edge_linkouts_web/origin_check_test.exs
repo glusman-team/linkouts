@@ -1,52 +1,54 @@
 defmodule EdgeLinkoutsWeb.OriginCheckTest do
-  use ExUnit.Case, async: false
+  @moduledoc """
+  Origin lockdown and liveness endpoint behavior.
 
-  # Env is process-global, so these run serially and restore the key around each test.
-  import Plug.Test
-  import Plug.Conn, only: [put_req_header: 3]
+  Why this exists: the fly.dev hostname is reachable directly and bypasses Cloudflare
+  (and its DDoS protection); without the shared-header check anyone could spend the
+  Cosmos RU budget. These tests pin the three properties that keep that check both
+  strict and harmless:
 
-  alias EdgeLinkoutsWeb.OriginCheck
+  - configured key + missing/wrong header -> 403 before any store read;
+  - configured key + right header -> the page renders normally;
+  - /healthz answers 200 with no header at all (Fly's checks carry none), and a stray
+    X_ORIGIN_KEY in the shell cannot arm the check, because the key is read from
+    application config (set only in prod by runtime.exs), never from the environment
+    per request.
+  """
+
+  use EdgeLinkoutsWeb.ConnCase, async: false
+
+  @key "test-origin-key"
 
   setup do
-    previous = System.get_env("X_ORIGIN_KEY")
-
-    on_exit(fn ->
-      case previous do
-        nil -> System.delete_env("X_ORIGIN_KEY")
-        value -> System.put_env("X_ORIGIN_KEY", value)
-      end
-    end)
-
-    :ok
+    Application.put_env(:edge_linkouts, :origin_check_key, @key)
+    on_exit(fn -> Application.delete_env(:edge_linkouts, :origin_check_key) end)
   end
 
-  test "without the key in the environment the plug is inert" do
-    System.delete_env("X_ORIGIN_KEY")
-    conn = conn(:get, "/")
-
-    refute OriginCheck.call(conn, []).halted
+  test "a request without the header is forbidden before any route runs", %{conn: conn} do
+    conn = get(conn, "/")
+    assert conn.status == 403
+    assert conn.resp_body == "forbidden"
   end
 
-  test "a request carrying the shared header passes" do
-    System.put_env("X_ORIGIN_KEY", "s3cret")
-    conn = conn(:get, "/") |> put_req_header("x-origin-key", "s3cret")
-
-    refute OriginCheck.call(conn, []).halted
-  end
-
-  test "a request without the header is halted with 403 before any route runs" do
-    System.put_env("X_ORIGIN_KEY", "s3cret")
-    conn = OriginCheck.call(conn(:get, "/"), [])
-
-    assert conn.halted
+  test "a request with the wrong header is forbidden", %{conn: conn} do
+    conn = conn |> put_req_header("x-origin-key", "not-the-key") |> get("/")
     assert conn.status == 403
   end
 
-  test "a request with the wrong header is halted too" do
-    System.put_env("X_ORIGIN_KEY", "s3cret")
-    conn = conn(:get, "/") |> put_req_header("x-origin-key", "guessed") |> OriginCheck.call([])
+  test "the matching header reaches the page", %{conn: conn} do
+    conn = conn |> put_req_header("x-origin-key", @key) |> get("/")
+    assert html_response(conn, 200)
+  end
 
-    assert conn.halted
-    assert conn.status == 403
+  test "/healthz answers 200 without the header", %{conn: conn} do
+    conn = get(conn, "/healthz")
+    assert conn.status == 200
+    assert conn.resp_body == "ok"
+  end
+
+  test "an unconfigured key leaves the app open (dev and test)", %{conn: conn} do
+    Application.delete_env(:edge_linkouts, :origin_check_key)
+    conn = get(conn, "/healthz")
+    assert conn.status == 200
   end
 end

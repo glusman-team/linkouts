@@ -45,3 +45,4 @@ erl_crash.dump
 # Local planning documents: working notes, not repo artifacts.
 /PLAN.md
 /plans/
+.ralph/

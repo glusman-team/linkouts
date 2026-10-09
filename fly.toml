@@ -14,12 +14,20 @@ kill_timeout = '5s'
 [env]
   PHX_SERVER = 'true'
   PORT = '8080'
-  RU_BUDGET_WEB = '450'
+  # The web app's slice of the free tier's 1000 RU/s. Strict split, confirmed with the
+  # maintainer: 150 here + 750 for the CLI leaves 100 of headroom for the portal and
+  # retries. Never raise this without lowering the CLI side (RU_BUDGET_CLI, default 750):
+  # the shared database throughput is 1000 RU/s and exceeding it throttles the live site.
+  RU_BUDGET_WEB = '150'
+  # Clustering: DNSPoll discovers peers on Fly's private network. With one machine the
+  # query resolves to itself, so the cluster supervisor is present but inert (see
+  # docs/adr/0004). Requires RELEASE_COOKIE as a secret to actually form a cluster.
+  CLUSTER_QUERY = 'edge-linkouts.internal'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'stop'
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
 
@@ -27,6 +35,13 @@ kill_timeout = '5s'
     type = 'requests'
     hard_limit = 1000
     soft_limit = 500
+
+  [[http_service.checks]]
+    grace_period = '10s'
+    interval = '10s'
+    method = 'GET'
+    path = '/healthz'
+    timeout = '2s'
 
 [[vm]]
   size = 'shared-cpu-1x'

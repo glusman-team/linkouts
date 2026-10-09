@@ -15,7 +15,9 @@ config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,
   force_ssl: [
     rewrite_on: [:x_forwarded_proto],
     exclude: [
-      # paths: ["/health"],
+      # Fly's health checks hit the machine directly over plain HTTP; /healthz must not
+      # redirect (it answers before the origin check either way).
+      paths: ["/healthz"],
       hosts: ["localhost", "127.0.0.1"]
     ]
   ]

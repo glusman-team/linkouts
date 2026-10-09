@@ -38,10 +38,15 @@ defmodule EdgeLinkoutsWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
+  # Liveness first: /healthz must answer before the origin lockdown and without touching
+  # anything, so Fly's direct (header-less, plain-HTTP) machine checks pass.
+  plug EdgeLinkoutsWeb.HealthCheck
+
   # Origin lockdown: reject anything that did not come through the Cloudflare zone
   # (the zone adds the shared header via a Transform Rule). Nothing here runs without
   # it, so direct hits on the fly.dev hostname cannot reach the store. Inert unless
-  # ORIGIN_CHECK_KEY is set, so local dev and tests are untouched.
+  # :origin_check_key is configured (runtime.exs sets it in prod from X_ORIGIN_KEY), so
+  # local dev and tests are untouched even if the variable leaks into the shell.
   plug EdgeLinkoutsWeb.OriginCheck
 
   plug Plug.Parsers,

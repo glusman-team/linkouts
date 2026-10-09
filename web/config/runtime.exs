@@ -121,6 +121,14 @@ if config_env() == :prod do
 
   host = System.get_env("PHX_HOST") || "example.com"
 
+  # Origin lockdown key (Cloudflare Transform Rule adds the header on every proxied
+  # request). Copied from the environment here - once, at boot - instead of being read
+  # per request, so tests can never see a stray shell variable and the plug can compare
+  # in constant time. Unset means the check is inert.
+  if origin_key = System.get_env("X_ORIGIN_KEY") do
+    config :edge_linkouts, origin_check_key: origin_key
+  end
+
   # Cosmos read-only access (see docs/adr/0002-verified-api-surface.md). The web app is
   # read-only and sees the read-only key only; the read-write key never reaches it.
   cosmos_endpoint =
