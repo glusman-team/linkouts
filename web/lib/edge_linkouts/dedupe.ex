@@ -100,9 +100,12 @@ defmodule EdgeLinkouts.Dedupe do
   defp remote_read(owner, id, mfa, server, opts) do
     :erpc.call(owner, __MODULE__, :run_local, [id, mfa, server, opts], 10_000)
   catch
-    # The owner left the cluster mid-call, is unreachable, or runs code from before this
-    # function existed (rolling deploy): the read must still work, so run it locally.
-    :exit, _reason -> run_local(id, mfa, server, opts)
+    # The owner left the cluster mid-call, is unreachable, timed out, or runs code from
+    # before run_local/4 existed (rolling deploy): the read must still work, so run it
+    # locally. :erpc signals every one of these as class :error ({:erpc, :noconnection},
+    # {:erpc, :timeout}, or a wrapped remote raise), and a dying link arrives as :exit, so
+    # all three classes fall back rather than only the exits.
+    _kind, _reason -> run_local(id, mfa, server, opts)
   end
 
   # The key's owner is the node the partitioned cache would store it on. Any failure to

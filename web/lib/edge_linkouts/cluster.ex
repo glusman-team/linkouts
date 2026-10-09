@@ -25,7 +25,9 @@ defmodule EdgeLinkouts.Cluster do
   # module hit). One named scope, started under our own GenServer, works in every mode.
   @scope :edge_linkouts_pg
   @group :edge_linkouts_nodes
-  @count_key {__MODULE__, :node_count}
+  # Name-scoped like the RateLimiter/Dedupe instances, so two Cluster processes under
+  # different names in one VM cannot fight over one count cell.
+  defp count_key(name), do: {__MODULE__, :node_count, name}
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
@@ -33,23 +35,25 @@ defmodule EdgeLinkouts.Cluster do
 
   @doc "The live node count (never less than 1)."
   @spec node_count() :: pos_integer()
-  def node_count do
-    case :persistent_term.get(@count_key, nil) do
+  def node_count(name \\ __MODULE__) do
+    case :persistent_term.get(count_key(name), nil) do
       nil -> 1
       ref -> max(:atomics.get(ref, 1), 1)
     end
   end
 
   @impl true
-  def init(_opts) do
+  def init(opts) do
+    name = Keyword.get(opts, :name, __MODULE__)
     # The scope is linked to this GenServer: when the supervisor restarts us the scope goes
     # down and comes back with it, so a stale scope can never double-count a restarted node.
     {:ok, _scope} = :pg.start_link(@scope)
     ref = :atomics.new(1, signed: false)
-    :persistent_term.put(@count_key, ref)
+    :persistent_term.put(count_key(name), ref)
     :ok = :pg.join(@scope, @group, self())
-    # monitor streams {ref, :join | :leave, group, pids} on every membership change,
-    # including our own join.
+    # monitor streams {ref, :join | :leave, group, pids} on later membership changes. It
+    # does NOT backfill existing members (our own join included), so the count is seeded
+    # explicitly below and every change after that arrives as a message.
     _ref = :pg.monitor(@scope, @group)
     :atomics.put(ref, 1, member_count())
     {:ok, ref}

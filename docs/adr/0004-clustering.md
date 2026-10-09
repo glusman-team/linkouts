@@ -35,11 +35,25 @@ architecture change.
 
 ## Failure modes (accepted, by design)
 
-- Owner unreachable mid-call: `:erpc.call` exit is caught and the read runs locally. A
-  partition costs duplicate reads, never an error page.
+- Owner unreachable mid-call: `:erpc.call` signals failures as class `:error`
+  (`{:erpc, :noconnection}`, `{:erpc, :timeout}`, a wrapped remote raise) and a dying link
+  as `:exit`; the fallback catches all three classes and the read runs locally. A partition
+  costs duplicate reads, never an error page. Covered by the dead-owner test in
+  `cluster_two_node_test.exs`, which fails against an `:exit`-only catch.
 - Rolling deploy where the old version lacks `Dedupe.run_local/4`: same fallback.
 - Ring not yet converged at boot: `find_node` errors are caught and treated as "local".
 - A `fly ssh console` node never joins the `:pg` group and never takes traffic or budget.
+
+## Why not batching or PubSub for the read path
+
+- Multi-item transactional batches are impossible: the container's partition key is `/id`,
+  and a Cosmos transaction cannot span partition keys, so N edges are N transactions.
+- `ReadMany` is query-backed and bills as a query, not as N cheaper point reads; it saves
+  round-trips, not RU, and the read path is already one point read per page view (the
+  LiveView keeps the decoded blob in its assigns, so a `?version=` switch costs zero).
+- Phoenix.PubSub cannot coalesce (a broadcast is fan-out, not single-flight) and there is
+  no cross-node invalidation need: loads swap containers wholesale rather than mutating
+  documents readers hold.
 
 ## Scaling up (the whole runbook)
 

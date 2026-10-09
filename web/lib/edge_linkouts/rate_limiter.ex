@@ -146,8 +146,10 @@ defmodule EdgeLinkouts.RateLimiter do
     {:ok, %{ref: ref}}
   end
 
-  # Integer division keeps the cluster-wide sum at or under the configured total; the
-  # minimum of 1 RU/s keeps a node functional when the budget is smaller than the cluster.
+  # Integer division keeps the cluster-wide sum at or under the configured total. The floor
+  # of 1 RU/s is a liveness guard, not a usable budget: past `total` nodes the per-node
+  # share is 1 RU/s and nearly every read is refused, which is the correct signal that the
+  # cluster has outgrown RU_BUDGET_WEB and the budget (or the free tier) must be raised.
   defp per_node_budget(total) do
     max(div(total, EdgeLinkouts.Cluster.node_count()), 1)
   end

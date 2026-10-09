@@ -19,9 +19,18 @@ defmodule EdgeLinkouts.ClusterTwoNodeTest do
   setup do
     # Shortnames on the machine hostname (resolved via /etc/hosts); 127.0.0.1 as a host
     # only works with longnames, which OTP refuses when the local hostname has no domain.
+    # A runner whose hostname does not resolve skips these tests with a reason instead of
+    # failing CI on an environment fact.
     unless Node.alive?() do
       {:ok, host} = :inet.gethostname()
-      {:ok, _} = Node.start(:"main@#{host}", :shortnames)
+
+      case Node.start(:"main@#{host}", :shortnames) do
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          {:skip, "cannot start distribution on #{host} (#{inspect(reason)})"}
+      end
     end
 
     # The test app booted with distribution off, so the main cache's ring holds a stale
@@ -79,6 +88,23 @@ defmodule EdgeLinkouts.ClusterTwoNodeTest do
     results = Enum.map(from_main ++ from_peer, &Task.await(&1, 10_000))
 
     assert Enum.uniq(results) == [:ok]
+    assert Agent.get(counter, & &1) == 1
+  end
+
+  test "an owner that disappears mid-flight falls back to a local read", %{peer_node: peer_node} do
+    assert_ring([node(), peer_node])
+    key = live_owned_key(peer_node)
+
+    # Kill the peer while it still owns the key: the ring has not converged yet, so the
+    # next execute routes to a node that no longer exists. :erpc signals that as class
+    # :error ({:erpc, :noconnection}), which the fallback must catch - an uncaught one
+    # would surface as an error page instead of a read.
+    :ok = :rpc.call(peer_node, :init, :stop, [])
+
+    {:ok, counter} = Agent.start_link(fn -> 0 end)
+    fetch = {EdgeLinkouts.ClusterPeer, :slow_counted_fetch, [counter]}
+
+    assert Dedupe.execute(key, fetch) == :ok
     assert Agent.get(counter, & &1) == 1
   end
 
