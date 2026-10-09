@@ -21,10 +21,8 @@ defmodule EdgeLinkoutsWeb.EdgeController do
          {:ok, blob} <- Codec.decode(stored["b"], Cosmos.dictionary()),
          {:ok, key} <- select_version(blob, params["version"]),
          {:ok, doc} <- Codec.resolve(blob, key) do
-      send_download(conn, {:binary, Codec.canonical_binary(doc)},
-        filename: "edge-#{id}-#{filename_key(key)}.ndjson",
-        content_type: "application/x-ndjson"
-      )
+      body = Codec.canonical_binary(doc)
+      send_cacheable(conn, body, filename: "edge-#{id}-#{filename_key(key)}.ndjson")
     else
       # The controller can answer 404 without raising: put_status + the ErrorHTML view
       # produce the same page the LiveView's EdgeNotFound exception renders, but as a
@@ -48,6 +46,42 @@ defmodule EdgeLinkoutsWeb.EdgeController do
         |> put_status(:internal_server_error)
         |> text("corrupt stored document: #{inspect(reason)}")
     end
+  end
+
+  # The download is a pure function of the stored document (canonical bytes), so repeat
+  # requests can be answered from caches instead of re-shipping the file:
+  # Cache-Control public 300 lets a shared cache hold it briefly, and a strong ETag (the
+  # content's own hash) turns a repeat request into a 304 with no body. That is egress
+  # the origin never pays again; the underlying Cosmos read is already replayed from the
+  # 30 s result cache, so the RU side is unchanged.
+  defp send_cacheable(conn, body, filename: filename) do
+    etag = "\"#{Base.encode16(:crypto.hash(:sha256, body), case: :lower) |> binary_part(0, 32)}\""
+
+    conn =
+      conn
+      |> put_resp_header("etag", etag)
+      |> put_resp_header("cache-control", "public, max-age=300")
+
+    if if_none_match(conn) |> Enum.any?(&(&1 == etag or &1 == "*")) do
+      conn |> send_resp(304, "") |> halt()
+    else
+      send_download(conn, {:binary, body},
+        filename: filename,
+        content_type: "application/x-ndjson"
+      )
+    end
+  end
+
+  # If-None-Match is a comma-separated list of validators, and RFC 9110 uses weak
+  # comparison for GET, so a client's W/"..." form matches our strong tag. Browsers echo
+  # the single strong tag verbatim; the split keeps compliant non-browser clients from
+  # paying for a full re-download.
+  defp if_none_match(conn) do
+    conn
+    |> Plug.Conn.get_req_header("if-none-match")
+    |> Enum.flat_map(&String.split(&1, ","))
+    |> Enum.map(&String.trim/1)
+    |> Enum.map(&String.trim_leading(&1, "W/"))
   end
 
   defp render_not_found(conn) do

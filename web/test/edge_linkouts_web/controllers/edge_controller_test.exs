@@ -53,4 +53,34 @@ defmodule EdgeLinkoutsWeb.EdgeControllerTest do
   defp canonical_at(id, key) do
     Fixtures.edge_doc(id) |> Fixtures.resolved(key) |> Codec.canonical_binary()
   end
+
+  test "the download is cacheable and repeat requests get a 304", %{conn: conn, id: id} do
+    # Why: the body is a pure function of the stored document, so re-shipping it on every
+    # repeat is wasted egress; the strong ETag turns repeats into header-only 304s.
+    conn = get(conn, "/edges/#{id}/download")
+    assert response(conn, 200)
+    [etag] = get_resp_header(conn, "etag")
+    assert String.starts_with?(etag, "\"") and String.ends_with?(etag, "\"")
+    assert get_resp_header(conn, "cache-control") == ["public, max-age=300"]
+
+    conn = build_conn() |> put_req_header("if-none-match", etag) |> get("/edges/#{id}/download")
+    assert conn.status == 304
+    assert conn.resp_body == ""
+    assert get_resp_header(conn, "etag") == [etag]
+  end
+
+  test "different bodies produce different ETags", %{conn: conn, id: id} do
+    conn = get(conn, "/edges/#{id}/download")
+    [first_etag] = get_resp_header(conn, "etag")
+
+    # The fixture's two versions of one edge can canonically equal; a second edge id is the
+    # honest way to get a different body.
+    [other_id] =
+      Fixtures.edge_docs() |> Enum.map(& &1["id"]) |> Enum.reject(&(&1 == id)) |> Enum.take(1)
+
+    conn = get(build_conn(), "/edges/#{other_id}/download")
+    [other_etag] = get_resp_header(conn, "etag")
+
+    refute other_etag == first_etag
+  end
 end

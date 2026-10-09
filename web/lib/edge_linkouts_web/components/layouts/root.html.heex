@@ -12,7 +12,7 @@
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
-    <script>
+    <script nonce={assigns[:csp_nonce]}>
       // Dark mode: data-theme on <html>, applied before first paint so there is no
       // flicker. A stored choice ("dark"/"light" in localStorage under "theme") wins;
       // otherwise the page follows prefers-color-scheme. assets/js/app.js owns changes

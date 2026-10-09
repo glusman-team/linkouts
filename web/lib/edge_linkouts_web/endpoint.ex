@@ -4,15 +4,22 @@ defmodule EdgeLinkoutsWeb.Endpoint do
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
+  # secure: true in production (config/prod.exs sets :secure_cookies). Compile-time read
+  # is correct here: the option list is a compile-time attribute, and prod always serves
+  # behind TLS; dev and test keep plain http on localhost working.
   @session_options [
     store: :cookie,
     key: "_edge_linkouts_key",
     signing_salt: "KJqSObnp",
-    same_site: "Lax"
+    same_site: "Lax",
+    secure: Application.compile_env(:edge_linkouts, :secure_cookies, false)
   ]
 
+  # compress: permessage-deflate on the LiveView websocket. Every diff after the first
+  # render travels compressed, which is most of this app's outbound bytes to clients
+  # (default is off; verified in phoenix/transports/websocket.ex for 1.8.15).
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options]],
+    websocket: [connect_info: [session: @session_options], compress: true],
     longpoll: [connect_info: [session: @session_options]]
 
   # Serve at "/" the static files from "priv/static" directory.
@@ -50,11 +57,13 @@ defmodule EdgeLinkoutsWeb.Endpoint do
   plug EdgeLinkoutsWeb.OriginCheck
 
   plug Plug.Parsers,
-    parsers: [:urlencoded, :multipart, :json],
+    # The app has no form POST routes at all (events travel on the LiveView socket), so
+    # the parser list is the smallest that still serves the longpoll fallback, and the
+    # body limit is tiny. Less accepted input is less attack surface.
+    parsers: [:urlencoded],
     pass: ["*/*"],
-    json_decoder: Phoenix.json_library()
+    length: 64_000
 
-  plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
   plug EdgeLinkoutsWeb.Router

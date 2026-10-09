@@ -23,6 +23,12 @@ config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,
   ]
 
 # Do not print debug messages in production
+config :edge_linkouts,
+  # Session cookie: `secure` is set from this flag in the endpoint's compile-time session
+  # options, so the cookie only travels over TLS in production. Local dev and tests keep
+  # plain http on localhost.
+  secure_cookies: true
+
 config :logger, level: :info
 
 # Runtime production configuration, including reading
