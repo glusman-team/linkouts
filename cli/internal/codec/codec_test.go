@@ -669,3 +669,73 @@ func TestRemoveVersionAbsentAndLast(t *testing.T) {
 		t.Errorf("versions = %v, want none — the caller deletes the document", blob.VersionKeys())
 	}
 }
+
+// --- storage format v2: derived dictionary ids, reused coders, CRC-less frames -------------
+
+func TestDictIDForSamplesIsDeterministicAndCorpusBound(t *testing.T) {
+	// The id is the only way a reader knows which dictionary a frame needs, so it must be a
+	// pure function of the corpus: retraining the same KG keeps the id (and stored docs stay
+	// decodable), and a different KG gets a different id (and the decode fails loudly).
+	a := [][]byte{[]byte(`{"k":1}`), []byte(`{"k":2}`)}
+	b := [][]byte{[]byte(`{"z":true}`), []byte(`{"z":false}`)}
+	idA1, idA2 := DictIDForSamples(a), DictIDForSamples(a)
+	if idA1 != idA2 {
+		t.Fatal("same corpus derived two different ids")
+	}
+	if DictIDForSamples(a) == DictIDForSamples(b) {
+		t.Fatal("different corpora derived the same id")
+	}
+	if id := DictIDForSamples(a); id < minCustomDictID {
+		t.Fatalf("id %#x collides with the zstd-registered range (< 32768)", id)
+	}
+}
+
+func TestCompressReusesTheEncoderAndOmitsCRC(t *testing.T) {
+	samples := [][]byte{[]byte(`{"schema":"x","versions":{}}`), []byte(`{"schema":"x","versions":{"v":{}}}`)}
+	dict, err := BuildDict(samples, 0)
+	if err != nil {
+		t.Fatalf("train: %v", err)
+	}
+	raw := []byte(`{"schema":"x","versions":{"v":{"a":1}}}`)
+
+	// First call warms the cache; the second must hit it. Without reuse this is where the
+	// 25 ms/doc dictionary digest cost hides.
+	if _, err := Compress(raw, dict, 0); err != nil {
+		t.Fatalf("compress: %v", err)
+	}
+	if _, ok := encoders.Load(encoderKey{level: DefaultZstdLevelWithDict, dictID: DictID(dict)}); !ok {
+		t.Fatal("dict-compressed frame did not reuse a cached encoder")
+	}
+	// A level of 0 with a dictionary must resolve to the dict default (19), not the plain 3:
+	// dict frames are written once per release, so the expensive level is the right default.
+	comp, err := Compress(raw, dict, 0)
+	if err != nil {
+		t.Fatalf("compress again: %v", err)
+	}
+	// zstd frame header descriptor byte (index 4): bit 2 (0x04) is the content-checksum flag.
+	// Frames carry no CRC; transport (TLS) and Cosmos's storage already checksum these bytes.
+	if comp[4]&0x04 != 0 {
+		t.Fatal("frame still carries a CRC (flag bit set)")
+	}
+	out, err := Decompress(comp, dict)
+	if err != nil {
+		t.Fatalf("decompress: %v", err)
+	}
+	if string(out) != string(raw) {
+		t.Fatalf("round trip mismatch: %s", out)
+	}
+	if _, ok := decoders.Load(DictID(dict)); !ok {
+		t.Fatal("decoder was not cached either")
+	}
+}
+
+func TestCompressLevelZeroWithoutDictKeepsLevel3(t *testing.T) {
+	// No dictionary: the fast default stays fast, and stays cacheable under dictID 0.
+	raw := []byte(`{"a":1}`)
+	if _, err := Compress(raw, nil, 0); err != nil {
+		t.Fatalf("compress: %v", err)
+	}
+	if _, ok := encoders.Load(encoderKey{level: DefaultZstdLevel, dictID: 0}); !ok {
+		t.Fatal("no-dict frame was not cached under the level-3 key")
+	}
+}

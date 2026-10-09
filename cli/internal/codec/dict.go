@@ -3,6 +3,7 @@ package codec
 import (
 	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -21,9 +22,31 @@ const (
 	minDictHistory    = 8         // the builder's own floor
 )
 
-// DefaultDictID identifies the dictionary trained from this KG's own documents. It is
-// stored beside the blob so a reader can tell "no dictionary" from "the wrong dictionary".
+// DefaultDictID is the historical fixed id from before ids were content-derived. Kept for
+// tests and docs that pin the old behavior; new training should pass 0 and let
+// DictIDForSamples derive one.
 const DefaultDictID = 0x454C4F31 // "ELO1"
+
+// zstd reserves dictionary ids below 32768 for registered dictionaries; user ids live in
+// [32768, 2^31). https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md
+const (
+	minCustomDictID = 32768
+	maxCustomDictID = 1<<31 - 1
+)
+
+// DictIDForSamples derives a dictionary id deterministically from the training corpus:
+// retraining from the same samples yields the same id (so a retrained dictionary is a
+// drop-in replacement), and a different corpus - another KG, or this KG after real change -
+// yields a different id (so a document can never be decoded against the wrong dictionary
+// silently). The hash runs over the sample bytes themselves, not over the trained output,
+// because the id has to exist before BuildDict can embed it in the dictionary header.
+func DictIDForSamples(samples [][]byte) uint32 {
+	h := fnv.New32a()
+	for _, s := range samples {
+		_, _ = h.Write(s)
+	}
+	return minCustomDictID + h.Sum32()%(maxCustomDictID-minCustomDictID)
+}
 
 // BuildDict trains a zstd dictionary from sample documents. Small JSON documents compress
 // badly on their own — most of the payload is key names that repeat across every edge — so
@@ -37,7 +60,7 @@ func BuildDict(samples [][]byte, id uint32) ([]byte, error) {
 		return nil, fmt.Errorf("cannot train a dictionary from zero samples")
 	}
 	if id == 0 {
-		id = DefaultDictID
+		id = DictIDForSamples(samples)
 	}
 	// History is what BuildDict sizes the tables against (it rejects < 8 bytes) and
 	// Contents are the samples it mines for offsets and repeated substrings; both are

@@ -134,7 +134,8 @@ fixtures: build ## Re-extract test fixtures from the local DAKP sample (one-time
 contract: build ## Regenerate the committed contract fixtures and their golden copy
 	mkdir -p $(CLI)/testdata/contract
 	rm -f $(CLI)/testdata/contract/docs.ndjson $(CLI)/testdata/contract/drift.ndjson \
-	  $(CLI)/testdata/contract/unresolvable.ndjson
+	  $(CLI)/testdata/contract/unresolvable.ndjson $(CLI)/testdata/contract/dictdocs.ndjson \
+	  $(CLI)/testdata/contract/fixture.dict
 	$(BIN) load $(KG)-1.11.2 --nodes $(FIXTURE_NODES) \
 	  --edges $(CLI)/testdata/dakp/edges.ndjson --engine $(FIXTURE_ENGINE) \
 	  --store $(FIXTURE_STORE) --progress=false $(FIXTURE_REPRO)
@@ -147,12 +148,22 @@ contract: build ## Regenerate the committed contract fixtures and their golden c
 	$(BIN) load $(KG)-1.16.0 --nodes $(FIXTURE_NODES) \
 	  --edges $(CLI)/testdata/dakp/edges.unresolvable.ndjson --engine $(FIXTURE_ENGINE) \
 	  --store file:$(CLI)/testdata/contract/unresolvable.ndjson --progress=false $(FIXTURE_REPRO)
+	# The dict-compressed twin of docs.ndjson, from a dictionary trained on the fixture itself:
+	# this is the byte surface the Elixir dictionary registry is contract-tested against.
+	$(BIN) train-dict --nodes $(FIXTURE_NODES) \
+	  --edges $(CLI)/testdata/dakp/edges.ndjson --engine $(FIXTURE_ENGINE) \
+	  --out $(CLI)/testdata/contract/fixture.dict --samples 64
+	$(BIN) load $(KG)-1.11.2 --nodes $(FIXTURE_NODES) \
+	  --edges $(CLI)/testdata/dakp/edges.ndjson --engine $(FIXTURE_ENGINE) \
+	  --store file:$(CLI)/testdata/contract/dictdocs.ndjson --progress=false $(FIXTURE_REPRO) \
+	  --dict $(CLI)/testdata/contract/fixture.dict
+	cp $(CLI)/testdata/contract/dictdocs.ndjson $(CLI)/testdata/contract/dictdocs.golden.ndjson
 	cp $(CLI)/testdata/contract/docs.ndjson $(CLI)/testdata/contract/docs.golden.ndjson
 	@echo "contract fixtures: $$(wc -l < $(CLI)/testdata/contract/docs.ndjson) documents"
 
 contract-test: contract ## Contract fixtures plus the Elixir reader that must agree with them
 	mkdir -p $(WEB)/test/fixtures/contract
-	cp $(CLI)/testdata/contract/*.ndjson $(WEB)/test/fixtures/contract/
+	cp $(CLI)/testdata/contract/*.ndjson $(CLI)/testdata/contract/*.dict $(WEB)/test/fixtures/contract/
 	cd $(WEB) && mix test test/contract_test.exs
 
 # Regeneration is byte-reproducible (fixed reservoir seed and pool clock, sorted pool), so any diff

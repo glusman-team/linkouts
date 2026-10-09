@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"sort"
+	"sync"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -15,6 +16,12 @@ const SchemaVersion = "edgelinkouts.blob/1"
 // DefaultZstdLevel is zstd's level 3: near-LZ4 speed with a ratio that matters at this
 // document size. Override with --zstd-level.
 const DefaultZstdLevel = 3
+
+// DefaultZstdLevelWithDict is the level the write path uses when a dictionary is in play:
+// dict frames are written once per release and read forever, and level 19 with the trained
+// tables is what pushed 91% of measured documents under the 1 KB RU step (median 474 B,
+// down from 970 B without a dictionary). Compression cost only matters to the loader.
+const DefaultZstdLevelWithDict = 19
 
 // Blob is one Cosmos document: every version of one edge, keyed by KGX release.
 // Cosmos indexes only `id`, so the whole document is read in one point read and every
@@ -190,31 +197,73 @@ func DecodeBlob(encoded string, dict []byte) (*Blob, error) {
 	return &b, nil
 }
 
-// Compress zstd-compresses raw, optionally against a trained dictionary.
+// Encoders and decoders are cached per (level, dictionary): building one digests the whole
+// dictionary (a 128 KiB dictionary took ~25 ms per document when the loader rebuilt the
+// encoder for every frame, turning an hour's load into a day). EncodeAll and DecodeAll are
+// both documented safe for concurrent use, so one instance per key serves every goroutine.
+var (
+	encoders sync.Map // map[encoderKey]*zstd.Encoder
+	decoders sync.Map // map[uint32]*zstd.Decoder, key 0 = no dictionary
+)
+
+type encoderKey struct {
+	level  int
+	dictID uint32
+}
+
+// Compress zstd-compresses raw, optionally against a trained dictionary. Frames carry no CRC
+// (WithEncoderCRC(false)): the bytes are already checksummed twice - TLS in transit and
+// Cosmos's storage - so the 4 bytes per frame are pure payload overhead, and the decoder
+// (klauspost, OTP's :zstd) does not need them. Magic bytes stay on: readers detect the
+// frame by them.
 func Compress(raw, dict []byte, level int) ([]byte, error) {
 	if level == 0 {
-		level = DefaultZstdLevel
+		if len(dict) > 0 {
+			level = DefaultZstdLevelWithDict
+		} else {
+			level = DefaultZstdLevel
+		}
 	}
-	opts := []zstd.EOption{zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(level))}
+	opts := []zstd.EOption{zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(level)), zstd.WithEncoderCRC(false)}
+	var dictID uint32
 	if len(dict) > 0 {
 		opts = append(opts, zstd.WithEncoderDict(dict))
+		dictID = DictID(dict)
+	}
+	key := encoderKey{level: level, dictID: dictID}
+	// A raw-content dictionary (no magic header) has id 0, so two different ones would collide
+	// in the cache: only dictionaries that carry their id are cached.
+	cached := dictID != 0 || len(dict) == 0
+	if cached {
+		if enc, ok := encoders.Load(key); ok {
+			return enc.(*zstd.Encoder).EncodeAll(raw, nil), nil
+		}
 	}
 	enc, err := zstd.NewWriter(nil, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("zstd encoder: %w", err)
 	}
-	// EncodeAll buffers, so Close only has to release the encoder; it is still checked,
-	// because a Close failure here would mean the frame was never finished.
-	compressed := enc.EncodeAll(raw, nil)
-	if err := enc.Close(); err != nil {
-		return nil, fmt.Errorf("zstd encoder close: %w", err)
+	if !cached {
+		defer func() { _ = enc.Close() }()
+		return enc.EncodeAll(raw, nil), nil
 	}
-	return compressed, nil
+	actual, _ := encoders.LoadOrStore(key, enc)
+	return actual.(*zstd.Encoder).EncodeAll(raw, nil), nil
 }
 
 // Decompress is the inverse of Compress. dict must match what was used to compress; a
 // dict-compressed frame decoded without it fails loudly rather than producing garbage.
 func Decompress(comp, dict []byte) ([]byte, error) {
+	var dictID uint32
+	if len(dict) > 0 {
+		dictID = DictID(dict)
+	}
+	cached := dictID != 0 || len(dict) == 0
+	if cached {
+		if dec, ok := decoders.Load(dictID); ok {
+			return decodeAll(dec.(*zstd.Decoder), comp)
+		}
+	}
 	var opts []zstd.DOption
 	if len(dict) > 0 {
 		opts = append(opts, zstd.WithDecoderDicts(dict))
@@ -223,7 +272,15 @@ func Decompress(comp, dict []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("zstd decoder: %w", err)
 	}
-	defer dec.Close()
+	if !cached {
+		defer dec.Close()
+		return decodeAll(dec, comp)
+	}
+	actual, _ := decoders.LoadOrStore(dictID, dec)
+	return decodeAll(actual.(*zstd.Decoder), comp)
+}
+
+func decodeAll(dec *zstd.Decoder, comp []byte) ([]byte, error) {
 	out, err := dec.DecodeAll(comp, nil)
 	if err != nil {
 		return nil, fmt.Errorf("zstd decode: %w", err)

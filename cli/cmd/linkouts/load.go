@@ -62,7 +62,8 @@ smaller, and the document is replaced under an etag precondition.`,
 	cmd.Flags().StringVar(&f.edges, "edges", "", "path to KGX edges.ndjson (required)")
 	cmd.Flags().StringVar(&f.base, "base", "", "version key to diff against (default: newest stored)")
 	cmd.Flags().StringVar(&f.dict, "dict", "", "trained zstd dictionary to compress with")
-	cmd.Flags().IntVar(&f.zstdLevel, "zstd-level", codec.DefaultZstdLevel, "zstd compression level")
+	cmd.Flags().IntVar(&f.zstdLevel, "zstd-level", 0,
+		"zstd compression level (default: 3 without a dictionary, 19 with one; dict frames are written once and read forever, so the high level is worth it)")
 	cmd.Flags().BoolVar(&f.noRepack, "no-repack", false, "skip documents that already carry this key")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "do everything except touch the store")
 	cmd.Flags().IntVar(&f.sampleSize, "sample-size", pipeline.DefaultSampleSize, "ids to reservoir-sample for /random (0 disables)")
