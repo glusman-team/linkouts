@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/glusman-team/linkouts/cli/internal/cosmos"
@@ -95,9 +96,14 @@ func Push(ctx context.Context, o PushOptions) (PushStats, error) {
 		return stats, fmt.Errorf("read source %s: %w", o.Source.Name(), err)
 	}
 
-	// Reserved documents last, in the order the source stores them (pool docs before the
-	// index document, because a staged file appends pools as each load finishes and the
-	// index rewrite is the final write).
+	// Reserved documents last, and among them the pool index (cosmos.RandomPoolID) strictly
+	// last: it names pools, so a reader that sees it must be able to resolve every pool it
+	// names. Source order cannot be trusted for this - stores stream in sorted id order, and
+	// "__random_pool__" sorts BEFORE "__random_pool__:<slug>:<ver>" (strict prefix). A stable
+	// partition keeps the pools in source order and moves the index behind them.
+	sort.SliceStable(reserved, func(i, j int) bool {
+		return reserved[i].ID != cosmos.RandomPoolID && reserved[j].ID == cosmos.RandomPoolID
+	})
 	for _, d := range reserved {
 		res, perr := pushOne(ctx, o, d)
 		stats.Created += res.Created

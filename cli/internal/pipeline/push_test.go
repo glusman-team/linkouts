@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/glusman-team/linkouts/cli/internal/cosmos"
@@ -58,20 +59,45 @@ func TestPushSkipsIdenticalAndReplacesChanged(t *testing.T) {
 	}
 }
 
+// orderedTarget records the id of every successful create, in call order, so a test can
+// assert write ORDER and not merely that everything arrived.
+type orderedTarget struct {
+	*cosmos.Fake
+	mu      sync.Mutex
+	created []string
+}
+
+func (o *orderedTarget) Create(ctx context.Context, d cosmos.Doc) error {
+	if err := o.Fake.Create(ctx, d); err != nil {
+		return err
+	}
+	o.mu.Lock()
+	o.created = append(o.created, d.ID)
+	o.mu.Unlock()
+	return nil
+}
+
+// The pool index names pools; a reader that sees the index before a pool it names 404s.
+// Sources stream in sorted id order, and "__random_pool__" sorts BEFORE
+// "__random_pool__:<slug>:<ver>" (strict prefix), so source order alone would write the
+// index first. Every pool must land before the index, and the index must be the very last
+// write of the run.
 func TestPushKeepsThePoolIndexLast(t *testing.T) {
 	source := cosmos.NewFake(nil)
-	target := cosmos.NewFake(nil)
+	target := &orderedTarget{Fake: cosmos.NewFake(nil)}
 	source.Seed(cosmos.Doc{ID: "00000000-edge", Blob: "b"})
 	source.Seed(cosmos.Doc{ID: cosmos.RandomPoolID, Blob: "ix"})
-	source.Seed(cosmos.Doc{ID: cosmos.PoolDocID("kg", "1.0"), Blob: "pool"})
+	source.Seed(cosmos.Doc{ID: cosmos.PoolDocID("kg", "1.0"), Blob: "pool-a"})
+	source.Seed(cosmos.Doc{ID: cosmos.PoolDocID("kg", "2.0"), Blob: "pool-b"})
 
 	if _, err := Push(context.Background(), PushOptions{Source: source, Target: target, Concurrency: 4}); err != nil {
 		t.Fatalf("push: %v", err)
 	}
-	for _, id := range []string{"00000000-edge", cosmos.RandomPoolID, cosmos.PoolDocID("kg", "1.0")} {
-		if _, ok := target.Docs()[id]; !ok {
-			t.Fatalf("target is missing %s", id)
-		}
+	if len(target.created) != 4 {
+		t.Fatalf("created %v, want 4 documents", target.created)
+	}
+	if last := target.created[len(target.created)-1]; last != cosmos.RandomPoolID {
+		t.Fatalf("write order %v: the pool index must be the last write", target.created)
 	}
 }
 

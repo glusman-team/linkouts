@@ -146,8 +146,15 @@ func Open(ctx context.Context, spec string, cfg AzureConfig, budget ratelimit.Bu
 		budget = ratelimit.NewUnlimited()
 	}
 	switch {
-	case spec == "" || spec == "cosmos":
+	case spec == "cosmos":
 		return NewAzure(cfg, budget)
+	case spec == "":
+		// An empty spec used to mean Cosmos. That made a zero-value globals{} in a test
+		// resolve to the real account the moment credentials were in the environment, and
+		// one such test dropped a live container. The flag default is the explicit string
+		// "cosmos", so every real invocation is unaffected; only code that never chose a
+		// store gets this error.
+		return nil, errors.New("no --store spec given (want cosmos, file:<path>, or mem://)")
 	case strings.HasPrefix(spec, "file:"):
 		return OpenFile(strings.TrimPrefix(spec, "file:"), budget)
 	case spec == "mem://" || spec == "mem":

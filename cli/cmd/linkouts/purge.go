@@ -80,6 +80,11 @@ func runPurge(ctx context.Context, g *globals, f *purgeFlags) (err error) {
 	if selected > 1 {
 		return errors.New("purge takes exactly one of --all, --drop-container, --kg, --key")
 	}
+	// Checked before any config is resolved or store opened: --dry-run promises "delete
+	// nothing", and dropping a container has no meaningful dry run to report.
+	if f.dropContainer && f.dryRun {
+		return errors.New("--dry-run cannot be combined with --drop-container; dropping a container has nothing to preview")
+	}
 
 	cfg, err := g.resolve()
 	if err != nil {
