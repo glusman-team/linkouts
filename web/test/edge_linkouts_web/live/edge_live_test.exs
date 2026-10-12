@@ -28,7 +28,7 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
         doc = Fixtures.resolved(Fixtures.edge_doc(id), version)
         {:ok, _view, html} = live(build_conn(), "/edges/#{id}?version=#{version}")
 
-        assert html =~ "This relationship states that"
+        assert html =~ "DrugApprovals KP asserts"
         assert html =~ doc["subject_name"]
         assert html =~ doc["object_name"]
 
@@ -227,7 +227,7 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
 
         # Once reads are admitted again, the retry event loads the page in place.
         render_click(view, "retry", %{})
-        assert render(view) =~ "This relationship states that"
+        assert render(view) =~ "DrugApprovals KP asserts"
       end
     end
 
@@ -316,7 +316,7 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
       assert html =~ "assertion"
     end
 
-    test "a single-version page says there is nothing earlier to compare", %{conn: conn} do
+    test "a single-version page has no Changes section at all", %{conn: conn} do
       id = "44444444-4444-4444-8444-444444444444"
 
       v1 = %{
@@ -332,7 +332,30 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
 
       {:ok, _view, html} = live(conn, "/edges/#{id}")
 
-      assert html =~ "nothing earlier to compare"
+      # Nothing to compare and nothing that changed render no section; a "Changes"
+      # heading over an empty panel is noise.
+      refute html =~ "diff-panel"
+      refute html =~ "nothing earlier to compare"
+    end
+
+    test "two identical versions have no Changes section either", %{conn: conn} do
+      id = "55555555-5555-4555-8555-555555555555"
+
+      v1 = %{
+        "id" => id,
+        "subject" => "CHEBI:64019",
+        "subject_name" => "aspirin",
+        "object" => "MONDO:0000418",
+        "object_name" => "ischemic stroke",
+        "predicate" => "biolink:treats"
+      }
+
+      Cosmos.Fake.seed(Fixtures.stored(id, %{@v1 => v1, @v2 => v1}))
+
+      {:ok, _view, html} = live(conn, "/edges/#{id}")
+
+      refute html =~ "diff-panel"
+      refute html =~ "No changes between"
     end
   end
 

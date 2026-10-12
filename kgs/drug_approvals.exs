@@ -185,7 +185,7 @@
   },
   title: "{subject_name} and {object_name}",
   edge:
-    "This relationship states that {subject} {relation} {object}{context}{qualifier_anatomical}{qualifier_frequency}{qualifier_population}{qualifier_sex}{qualifier_temporal}.",
+    "DrugApprovals KP asserts {subject} {relation} {object}{context}{qualifier_anatomical}{qualifier_frequency}{qualifier_population}{qualifier_sex}{qualifier_temporal}.",
 
   # The legacy text relationship, in full sentences: the claim first, with identifiers and
   # categories inline, then the provenance in words. It scales to any qualifier the config

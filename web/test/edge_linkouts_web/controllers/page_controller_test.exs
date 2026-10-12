@@ -54,6 +54,21 @@ defmodule EdgeLinkoutsWeb.PageControllerTest do
       refute html =~ "version-pill version-pill-latest"
     end
 
+    test "the counts line tags the newest release when the config calls it latest", %{conn: conn} do
+      # The fixture index stops at 1.16.0 while the config's latest_version is 1.23.4;
+      # re-seed it with that release present so the newest stored release IS the latest.
+      # The home page reads releases from the pool index, so no edge document is needed.
+      Cosmos.Fake.seed(Fixtures.docs())
+
+      Cosmos.Fake.seed_pool_index(%{
+        Fixtures.slug() => %{"1.11.2" => 6, "1.16.0" => 6, "1.23.4" => 6}
+      })
+
+      html = conn |> get(~p"/") |> html_response(200)
+
+      assert html =~ ~r/edges in 1\.23\.4<[^>]*class="latest-badge"/s
+    end
+
     test "the counts are the newest release's, not a sum over releases", %{conn: conn} do
       Cosmos.Fake.seed(Fixtures.docs())
 

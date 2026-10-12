@@ -434,6 +434,12 @@ code, kbd, pre {
   vertical-align: middle;
 }
 
+/* The counts line's badge trails the version number inline ("edges in 1.23.4 latest"); the
+   pill row's badge is a flex sibling, so only this one needs its own gap. */
+.kg-counts .latest-badge {
+  margin-left: 0.35rem;
+}
+
 /* Relationship diagram: wrapping HTML cards, not clipped SVG text. */
 .edge-diagram {
   display: grid;

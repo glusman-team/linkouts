@@ -154,7 +154,7 @@ defmodule EdgeLinkouts.DisplayTest do
       assert text =~ "is contraindicated for patients with"
       assert text =~ contraindicated.doc["subject_name"]
       assert text =~ contraindicated.doc["object_name"]
-      assert String.starts_with?(text, "This relationship states that ")
+      assert String.starts_with?(text, "DrugApprovals KP asserts ")
       assert String.ends_with?(text, ".")
     end
 

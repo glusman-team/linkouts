@@ -272,6 +272,13 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
   attr :key_name, :string, default: nil
   attr :diff, :list, default: nil
 
+  # Nothing to compare (the oldest stored version) or nothing that changed: no section at
+  # all. A "Changes" heading over an empty panel is noise; the version timeline above it
+  # already carries the release list. An unresolved previous version still renders, since
+  # that is a data anomaly a reader can report, not an empty state.
+  def diff_panel(%{prev_key: nil} = assigns), do: empty_diff_panel(assigns)
+  def diff_panel(%{diff: []} = assigns), do: empty_diff_panel(assigns)
+
   def diff_panel(assigns) do
     groups =
       case assigns.diff do
@@ -306,6 +313,12 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
           </div>
       <% end %>
     </section>
+    """
+  end
+
+  defp empty_diff_panel(assigns) do
+    ~H"""
+    <%!-- nothing to compare and nothing that changed render no section at all --%>
     """
   end
 

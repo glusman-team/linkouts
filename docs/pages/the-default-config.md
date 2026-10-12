@@ -47,8 +47,8 @@ From this plain KGX edge:
 
 the relationship line reads:
 
-> TP53, a Gene, correlated with sarcoma, a Disease. This assertion is machine-generated and
-> human-validated.
+> TP53, a Gene, correlated with sarcoma, a Disease. This observation is machine generated. The
+> entire dataset underwent manual QC with some human validation.
 
 and the evidence paragraph:
 
@@ -94,10 +94,10 @@ in the reader's vocabulary:
 
 | knowledge_level | agent_type | sentence |
 |---|---|---|
-| `knowledge_assertion` | `manual_validation_of_automated_agent` | "This assertion is machine-generated and human-validated." |
+| `knowledge_assertion` | `manual_validation_of_automated_agent` | "This observation is machine generated. The entire dataset underwent manual QC with some human validation." (the QC sentence is identical at every knowledge level) |
 | `knowledge_assertion` | `automated_agent` | "This assertion is machine-generated." |
 | `knowledge_assertion` | `manual_agent` | "This assertion is human-curated." |
-| `observation` | ... | "This observation is machine generated. The entire dataset underwent manual QC with some human validation." for `manual_validation_of_automated_agent`; the other three as above, saying "observation" |
+| `observation` | ... | the same four, saying "observation" |
 | any other level | ... | the same four, saying "statement" |
 
 Unlisted values fall back rather than disappear: an unknown `agent_type` renders "The assertion

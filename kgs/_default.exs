@@ -57,7 +57,7 @@
            {:pick, "agent_type",
             %{
               "manual_validation_of_automated_agent" =>
-                "This assertion is machine-generated and human-validated.",
+                "This observation is machine generated. The entire dataset underwent manual QC with some human validation.",
               "automated_agent" => "This assertion is machine-generated.",
               "manual_agent" => "This assertion is human-curated.",
               "not_provided" =>
@@ -79,7 +79,7 @@
            {:pick, "agent_type",
             %{
               "manual_validation_of_automated_agent" =>
-                "This statement is machine-generated and human-validated.",
+                "This observation is machine generated. The entire dataset underwent manual QC with some human validation.",
               "automated_agent" => "This statement is machine-generated.",
               "manual_agent" => "This statement is human-curated.",
               "not_provided" => "The provenance of this statement is not recorded.",
