@@ -34,7 +34,7 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
                  ~s(href="https://github.com/NCATSTranslator/Translator-All/wiki/Multiomics-Drug-Approvals-KP")
 
         assert html =~ ~s(>DrugApprovals KP<)
-        assert html =~ ~s(</a> asserts)
+        assert html =~ ~s(</a> claims)
         assert html =~ doc["subject_name"]
         assert html =~ doc["object_name"]
 
@@ -239,7 +239,7 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
                  ~s(href="https://github.com/NCATSTranslator/Translator-All/wiki/Multiomics-Drug-Approvals-KP")
 
         assert html =~ ~s(>DrugApprovals KP<)
-        assert html =~ ~s(</a> asserts)
+        assert html =~ ~s(</a> claims)
       end
     end
 
@@ -313,7 +313,7 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
 
       {:ok, _view, html} = live(conn, "/edges/#{id}")
 
-      assert html =~ "differ between"
+      assert html =~ "changed from"
       assert html =~ "diff-line-added"
       assert html =~ "diff-line-removed"
 
@@ -326,6 +326,56 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
       assert html =~ "PMID:2"
       assert html =~ "Knowledge level"
       assert html =~ "assertion"
+    end
+
+    test "a one-for-one object swap in a list renders as inner field lines, old struck first",
+         %{conn: conn} do
+      id = "33333333-3333-4333-8333-333333333334"
+
+      source = fn urls ->
+        %{
+          "resource_id" => "infores:drugapprovals-kp",
+          "resource_role" => "primary_knowledge_source",
+          "source_record_urls" => urls
+        }
+      end
+
+      v1 = %{
+        "id" => id,
+        "subject" => "CHEBI:64019",
+        "subject_name" => "aspirin",
+        "object" => "MONDO:0000418",
+        "object_name" => "ischemic stroke",
+        "predicate" => "biolink:treats",
+        "sources" => [source.("https://old.example/a")]
+      }
+
+      v2 = %{
+        "$t" => @v1,
+        "$set" => %{"sources" => [source.("https://new.example/b")]}
+      }
+
+      Cosmos.Fake.seed(Fixtures.stored(id, %{@v1 => v1, @v2 => v2}))
+
+      {:ok, _view, html} = live(conn, "/edges/#{id}")
+
+      # The changed field is addressed by its full dotted path, so a sources list with
+      # several sources still says whose field moved.
+      assert html =~
+               ~s(<span class="diff-field diff-path">sources.infores:drugapprovals-kp.source_record_urls</span>)
+
+      refute html =~ ~s("resource_role")
+      refute html =~ "diff-parent"
+
+      # Direction and shape: the previous version's value sits on the removed line, struck,
+      # and the current version's on the added line below it. No arrow icon anywhere.
+      assert html =~
+               ~r/diff-line-removed[\s\S]{0,600}?diff-old">https:\/\/old\.example\/a</
+
+      assert html =~
+               ~r/diff-line-added[\s\S]{0,600}?diff-new">https:\/\/new\.example\/b</
+
+      refute html =~ "diff-arrow"
     end
 
     test "a single-version page has no Changes section at all", %{conn: conn} do
@@ -367,7 +417,7 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
       {:ok, _view, html} = live(conn, "/edges/#{id}")
 
       refute html =~ "diff-panel"
-      refute html =~ "No changes between"
+      refute html =~ "No changes from"
     end
   end
 
@@ -414,16 +464,22 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
                ~s(href="/drugapprovals-kp/random?version=1.16.0")
     end
 
-    test "the graph's name links to the same scoped pick", %{conn: conn, id: id} do
+    test "the page names the graph once, in the claim, with its source's external link", %{
+      conn: conn,
+      id: id
+    } do
       {:ok, _view, html} = live(conn, "/edges/#{id}")
 
-      assert html =~ ~s(class="kg-link")
-      assert html =~ "DrugApprovals KP"
+      # The kicker that used to repeat the graph's name beside the sentence is gone, so the
+      # claim's opening name is the page's only KG-name link up top.
+      refute html =~ ~s(class="edge-kicker")
 
-      # The source keeps its own external link beside the name, which is what frees the name
-      # to stay inside this app.
       assert html =~
-               "https://github.com/NCATSTranslator/Translator-All/wiki/Multiomics-Drug-Approvals-KP"
+               ~r/<h1 class="edge-sentence"><a[^>]*Multiomics-Drug-Approvals-KP[^>]*>DrugApprovals KP/
+
+      # The name's single link is the source's own documentation, not a random pick.
+      assert html =~
+               ~s(href="https://github.com/NCATSTranslator/Translator-All/wiki/Multiomics-Drug-Approvals-KP")
     end
 
     test "a graph with no display config still scopes the button", %{conn: conn} do

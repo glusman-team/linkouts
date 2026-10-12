@@ -195,7 +195,7 @@
   },
   title: "{subject_name} and {object_name}",
   edge:
-    "{kp} asserts {subject} {relation} {object}{context}{qualifier_anatomical}{qualifier_frequency}{qualifier_population}{qualifier_sex}{qualifier_temporal}.",
+    "{kp} claims {subject} {relation} {object}{context}{qualifier_anatomical}{qualifier_frequency}{qualifier_population}{qualifier_sex}{qualifier_temporal}.",
 
   # The legacy text relationship, in full sentences: the claim first, with identifiers and
   # categories inline, then the provenance in words. It scales to any qualifier the config
@@ -222,11 +222,11 @@
         {:pick, "clinical_approval_status",
          %{
            "approved_for_condition" =>
-             "DrugApprovals KP asserts this association is approved for the indicated condition.",
+             "DrugApprovals KP claims this association is approved for the indicated condition.",
            # Stated in the headline ("was applied off label to treat"); an empty render
            # drops the sentence here rather than repeating it in quieter type.
            "off_label_use" => "",
-           "contraindicated" => "DrugApprovals KP asserts this association is contraindicated.",
+           "contraindicated" => "DrugApprovals KP claims this association is contraindicated.",
            "not_provided" =>
              "DrugApprovals KP does not specify the approval status of this association.",
            :default => "DrugApprovals KP characterizes this association as {status}."

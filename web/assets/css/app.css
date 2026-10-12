@@ -135,6 +135,12 @@ code, kbd, pre {
   outline-offset: 2px;
 }
 
+/* The browser's own surface: selection carries the accent as a tint, so even highlighted
+   text stays inside the world instead of falling back to the UA blue. */
+::selection {
+  background: color-mix(in oklab, var(--color-primary) 25%, transparent);
+}
+
 /* --- shell ------------------------------------------------------------------- */
 
 /* The research-use disclaimer is a legal boundary, not a footnote: banner treatment, a
@@ -196,6 +202,33 @@ code, kbd, pre {
   font-size: 1.05rem;
   letter-spacing: -0.01em;
   color: var(--color-base-content);
+}
+
+/* Narrow phones: the fixed rail padding and the full button label overflow the row and clip
+   the theme toggle off the edge. Tighten the rail, and let the die carry the random button —
+   the label stays for screen readers. The brand steps down one size so 320px still fits. */
+@media (max-width: 30rem) {
+  .site-header-inner {
+    padding-inline: 1rem;
+    gap: 0.5rem;
+  }
+
+  .brand {
+    font-size: 1rem;
+  }
+
+  .site-header-inner .btn {
+    padding-inline: 0.6rem;
+  }
+
+  .site-header-inner .random-btn span:not(.sr-only) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 
 .site-footer {
@@ -644,12 +677,18 @@ code, kbd, pre {
 .diff-old {
   text-decoration: line-through;
   text-decoration-color: var(--color-error);
+  background: color-mix(in oklab, var(--color-error) 10%, var(--color-base-100)) !important;
 }
 
-.diff-arrow {
-  width: 0.9rem;
-  height: 0.9rem;
-  opacity: 0.6;
+.diff-new {
+  background: color-mix(in oklab, var(--color-success) 10%, var(--color-base-100)) !important;
+}
+
+.diff-path {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", monospace;
+  font-size: 0.74rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .diff-list {
@@ -657,13 +696,23 @@ code, kbd, pre {
 }
 
 /* Colour is never the only signal: every diff line also carries a +/- marker in the
-   markup and a visually-hidden word (added/removed/changed) for screen readers. */
+   markup and a visually-hidden word (added/removed) for screen readers. The tints are
+   light backdrops so a changed pair reads as two whole lines, not red and green text
+   floating on the page. */
 .diff-line-added {
   color: var(--color-success);
+  background: color-mix(in oklab, var(--color-success) 7%, transparent);
 }
 
 .diff-line-removed {
   color: var(--color-error);
+  background: color-mix(in oklab, var(--color-error) 6%, transparent);
+}
+
+.diff-line-added,
+.diff-line-removed {
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-field);
 }
 
 .diff-line-changed {

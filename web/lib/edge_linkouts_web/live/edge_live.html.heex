@@ -3,7 +3,7 @@
     <% :ok -> %>
       <article class="edge-page">
         <header class="edge-head">
-          <p class="edge-kicker">
+          <p :if={!@sentence} class="edge-kicker">
             <%!-- The name is a link into this graph (a random relationship from it), and the
                  source icon beside it is the external documentation it used to be. One link
                  doing both would send a reader who wanted the graph out of this app. --%>
@@ -26,8 +26,6 @@
                 (opens the knowledge source's documentation in a new tab)
               </span>
             </a>
-            <span class="version-pill" title={@key}>version {@version_label}</span>
-            <span :if={@latest} class="latest-badge">latest</span>
           </p>
 
           <%= if @sentence do %>

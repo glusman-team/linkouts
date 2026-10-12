@@ -246,6 +246,7 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
           <.link
             patch={~p"/edges/#{@edge_id}?version=#{step.key}"}
             class="timeline-step"
+            title={step.key}
             aria-current={step.key == @current && "page"}
           >
             <span class="timeline-label">{step.label}</span>
@@ -297,16 +298,20 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
             This is the oldest stored version; there is nothing earlier to compare it with.
           </p>
         <% is_nil(@diff) -> %>
-          <p>The previous version ({@prev_key}) could not be resolved, so no diff is shown.</p>
+          <p>
+            The previous version ({version_label(@prev_key)}) could not be resolved, so no diff is shown.
+          </p>
         <% @diff == [] -> %>
-          <p>No changes between {@prev_key} and this version.</p>
+          <p>No changes from {version_label(@prev_key)} to this version.</p>
         <% true -> %>
           <p class="diff-summary">
-            {length(@diff)} field{if length(@diff) == 1, do: "", else: "s"} differ between {@prev_key} and {@key_name} (<span class="diff-line-added">+ added</span>
-            / <span class="diff-line-removed">- removed</span>):
+            {diff_summary(@diff, @prev_key, @key_name)}
           </p>
           <div :for={{title, entries} <- @groups} class="diff-group">
-            <h3>{title}</h3>
+            <%!-- The group heading is taxonomy, not reader information: the +/- markers and
+               field labels carry the meaning. It earns its line only when one heading
+               batches several entries; a single-entry group starts straight at the field. --%>
+            <h3 :if={length(entries) > 1}>{title}</h3>
             <ul>
               <.diff_entry :for={change <- entries} change={change} />
             </ul>
@@ -361,28 +366,43 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
     assigns = assign(assigns, key: key, olds: values(old), news: values(new))
 
     ~H"""
-    <li class="diff-line-changed">
-      <span class="sr-only"> changed </span>
+    <li class="diff-line-removed">
+      <span aria-hidden="true">-</span><span class="sr-only"> removed </span>
       <span class="diff-field">{field_label(@key)}</span>
       <code :for={value <- @olds} class="diff-old">{value}</code>
-      <.icon name="hero-arrow-right" class="diff-arrow" />
+    </li>
+    <li class="diff-line-added">
+      <span aria-hidden="true">+</span><span class="sr-only"> added </span>
+      <span class="diff-field">{field_label(@key)}</span>
       <code :for={value <- @news} class="diff-new">{value}</code>
     </li>
     """
   end
 
   defp diff_entry(%{change: {:list_changed, key, added, removed}} = assigns) do
+    {inner, parent} = inner_object_diff(added, removed)
+
     assigns =
       assign(assigns,
-        key: key,
+        inner: inner,
+        path: parent && "#{key}.#{parent}",
         added: Enum.map(added, &pretty/1),
         removed: Enum.map(removed, &pretty/1)
       )
 
     ~H"""
     <li class="diff-line-changed">
-      <span class="diff-field">{field_label(@key)}</span>
-      <ul class="diff-list">
+      <%!-- When exactly one object left the list and one entered it, the whole-object chips
+           bury the fact: nearly always one field inside the object moved. Render those inner
+           fields as their own +/- lines, addressed by the full dotted path to the moved
+           value ("sources.infores:drugapprovals-kp.source_record_urls"), so the reader sees
+           which entry and field changed however many sources the list holds; anything less
+           symmetric falls back to whole-element chips, which stay honest for reorderings
+           and multi-element changes. --%>
+      <ul :if={@inner != []} class="diff-list">
+        <.inner_field :for={field <- @inner} field={field} path={@path} />
+      </ul>
+      <ul :if={@inner == []} class="diff-list">
         <li :for={item <- @added} class="diff-line-added">
           <span aria-hidden="true">+</span><span class="sr-only"> added </span><code>{item}</code>
         </li>
@@ -392,6 +412,86 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
       </ul>
     </li>
     """
+  end
+
+  # Exactly one map out, one map in: the pair is diffable field by field, and the map's own
+  # resource_id is the path segment the inner lines address through. Anything else
+  # (multi-element changes, reorderings, scalar elements) returns the empty field list and no
+  # path, and the caller renders whole-element chips instead.
+  defp inner_object_diff([new], [old]) when is_map(new) and is_map(old) do
+    keys = old |> Map.keys() |> Kernel.++(Map.keys(new)) |> Enum.uniq() |> Enum.sort()
+
+    fields =
+      for key <- keys,
+          change = inner_field_change(key, Map.get(old, key), Map.get(new, key)),
+          do: change
+
+    {fields, Map.get(new, "resource_id")}
+  end
+
+  defp inner_object_diff(_added, _removed), do: {[], nil}
+
+  defp inner_field_change(_key, same, same), do: nil
+  defp inner_field_change(key, nil, new), do: {:inner_added, key, values(new)}
+  defp inner_field_change(key, old, nil), do: {:inner_removed, key, values(old)}
+  defp inner_field_change(key, old, new), do: {:inner_changed, key, values(old), values(new)}
+
+  defp inner_field(%{field: {:inner_added, key, values}} = assigns) do
+    assigns = assign(assigns, key: key, values: values)
+
+    ~H"""
+    <li class="diff-line-added">
+      <span aria-hidden="true">+</span><span class="sr-only"> added </span>
+      <span class="diff-field diff-path">{@path}.{@key}</span>
+      <code :for={value <- @values}>{value}</code>
+    </li>
+    """
+  end
+
+  defp inner_field(%{field: {:inner_removed, key, values}} = assigns) do
+    assigns = assign(assigns, key: key, values: values)
+
+    ~H"""
+    <li class="diff-line-removed">
+      <span aria-hidden="true">-</span><span class="sr-only"> removed </span>
+      <span class="diff-field diff-path">{@path}.{@key}</span>
+      <code :for={value <- @values}>{value}</code>
+    </li>
+    """
+  end
+
+  defp inner_field(%{field: {:inner_changed, key, old_values, new_values}} = assigns) do
+    assigns = assign(assigns, key: key, olds: old_values, news: new_values)
+
+    ~H"""
+    <li class="diff-line-removed">
+      <span aria-hidden="true">-</span><span class="sr-only"> removed </span>
+      <span class="diff-field diff-path">{@path}.{@key}</span>
+      <code :for={value <- @olds} class="diff-old">{value}</code>
+    </li>
+    <li class="diff-line-added">
+      <span aria-hidden="true">+</span><span class="sr-only"> added </span>
+      <span class="diff-field diff-path">{@path}.{@key}</span>
+      <code :for={value <- @news} class="diff-new">{value}</code>
+    </li>
+    """
+  end
+
+  # "1 field changed from 1.16.0 to 1.11.2": one uninterrupted string, so the summary reads
+  # as a sentence no matter how the template lays out around the interpolation.
+  defp diff_summary(diff, prev_key, key_name) do
+    noun = if(length(diff) == 1, do: "field", else: "fields")
+
+    "#{length(diff)} #{noun} changed from #{version_label(prev_key)} to #{version_label(key_name)}"
+  end
+
+  # A stored key carries the KG name on every mention ("drugapprovals-kp-1.23.3"), which is
+  # noise once the page already says which KG it is. The release number is the comparable part.
+  defp version_label(key) do
+    case EdgeLinkouts.Display.name_of(key) do
+      nil -> key
+      name -> String.replace_prefix(key, name <> "-", "")
+    end
   end
 
   @doc """

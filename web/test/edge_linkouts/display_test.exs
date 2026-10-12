@@ -154,7 +154,7 @@ defmodule EdgeLinkouts.DisplayTest do
       assert text =~ "is contraindicated for patients with"
       assert text =~ contraindicated.doc["subject_name"]
       assert text =~ contraindicated.doc["object_name"]
-      assert String.starts_with?(text, "DrugApprovals KP asserts ")
+      assert String.starts_with?(text, "DrugApprovals KP claims ")
       assert String.ends_with?(text, ".")
     end
 
@@ -171,7 +171,7 @@ defmodule EdgeLinkouts.DisplayTest do
               "https://github.com/NCATSTranslator/Translator-All/wiki/Multiomics-Drug-Approvals-KP"} in links
 
       # The plain-text read still opens with the name followed by the claim.
-      assert Segment.to_text(segments) =~ "DrugApprovals KP asserts "
+      assert Segment.to_text(segments) =~ "DrugApprovals KP claims "
     end
 
     test "the subject and object become links to their identifiers", %{
