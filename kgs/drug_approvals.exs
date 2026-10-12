@@ -164,6 +164,16 @@
        "https://dailymed.nlm.nih.gov/dailymed/search.cfm?adv=1&labeltype=all&query=({subject_query})+AND+34067-9:({object_query})",
        "labels mentioning both {subject_name} and {object_name}"},
 
+    # The sentence opens by naming its source, and the name links out to the source's
+    # documentation: the same target as the header's external-link icon (the top-level
+    # :url), so a reader who lands mid-sentence reaches it without scrolling back up.
+    # Slots cannot reference the config's own top-level keys, so the URL is written out
+    # here too and must stay in sync with :url.
+    "kp" =>
+      {:url,
+       "https://github.com/NCATSTranslator/Translator-All/wiki/Multiomics-Drug-Approvals-KP",
+       "DrugApprovals KP"},
+
     # Provenance names the integrator once and lists what it integrated: the primary source
     # is DAKP itself, so it renders as nothing inside the list (empty elements are dropped)
     # and the sentence names the supporting sources with their linkouts.
@@ -185,7 +195,7 @@
   },
   title: "{subject_name} and {object_name}",
   edge:
-    "DrugApprovals KP asserts {subject} {relation} {object}{context}{qualifier_anatomical}{qualifier_frequency}{qualifier_population}{qualifier_sex}{qualifier_temporal}.",
+    "{kp} asserts {subject} {relation} {object}{context}{qualifier_anatomical}{qualifier_frequency}{qualifier_population}{qualifier_sex}{qualifier_temporal}.",
 
   # The legacy text relationship, in full sentences: the claim first, with identifiers and
   # categories inline, then the provenance in words. It scales to any qualifier the config

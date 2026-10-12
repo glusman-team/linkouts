@@ -158,6 +158,22 @@ defmodule EdgeLinkouts.DisplayTest do
       assert String.ends_with?(text, ".")
     end
 
+    test "the source name opens the sentence as a link to its documentation", %{
+      resolved: resolved,
+      config: config
+    } do
+      edge = Enum.find(resolved, &(&1.version == @v1))
+      segments = Display.edge(config, edge.doc, edge.version)
+
+      links = for {:link, href, label} <- segments, do: {label, href}
+
+      assert {"DrugApprovals KP",
+              "https://github.com/NCATSTranslator/Translator-All/wiki/Multiomics-Drug-Approvals-KP"} in links
+
+      # The plain-text read still opens with the name followed by the claim.
+      assert Segment.to_text(segments) =~ "DrugApprovals KP asserts "
+    end
+
     test "the subject and object become links to their identifiers", %{
       resolved: resolved,
       config: config

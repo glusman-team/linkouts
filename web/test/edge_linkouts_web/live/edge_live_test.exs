@@ -28,7 +28,13 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
         doc = Fixtures.resolved(Fixtures.edge_doc(id), version)
         {:ok, _view, html} = live(build_conn(), "/edges/#{id}?version=#{version}")
 
-        assert html =~ "DrugApprovals KP asserts"
+        # The sentence opens with the source name linking out to its documentation,
+        # the same target as the header's external-link icon.
+        assert html =~
+                 ~s(href="https://github.com/NCATSTranslator/Translator-All/wiki/Multiomics-Drug-Approvals-KP")
+
+        assert html =~ ~s(>DrugApprovals KP<)
+        assert html =~ ~s(</a> asserts)
         assert html =~ doc["subject_name"]
         assert html =~ doc["object_name"]
 
@@ -227,7 +233,13 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
 
         # Once reads are admitted again, the retry event loads the page in place.
         render_click(view, "retry", %{})
-        assert render(view) =~ "DrugApprovals KP asserts"
+        html = render(view)
+
+        assert html =~
+                 ~s(href="https://github.com/NCATSTranslator/Translator-All/wiki/Multiomics-Drug-Approvals-KP")
+
+        assert html =~ ~s(>DrugApprovals KP<)
+        assert html =~ ~s(</a> asserts)
       end
     end
 
