@@ -34,7 +34,7 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
                  ~s(href="https://github.com/NCATSTranslator/Translator-All/wiki/Multiomics-Drug-Approvals-KP")
 
         assert html =~ ~s(>DrugApprovals KP<)
-        assert html =~ ~s(</a> claims)
+        assert html =~ ~s(</a> asserts)
         assert html =~ doc["subject_name"]
         assert html =~ doc["object_name"]
 
@@ -61,7 +61,7 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
         assert html =~
                  ~s(href="https://biolink.github.io/information-resource-registry/resources/drugapprovals-kp/")
 
-        assert html =~ ", which integrates"
+        assert html =~ ", which integrated"
         refute html =~ ~s(Assertion method)
         refute html =~ "agent_type is"
       end
@@ -239,7 +239,7 @@ defmodule EdgeLinkoutsWeb.EdgeLiveTest do
                  ~s(href="https://github.com/NCATSTranslator/Translator-All/wiki/Multiomics-Drug-Approvals-KP")
 
         assert html =~ ~s(>DrugApprovals KP<)
-        assert html =~ ~s(</a> claims)
+        assert html =~ ~s(</a> asserts)
       end
     end
 

@@ -74,7 +74,7 @@ rounded:
   pill: "999px"
 spacing:
   rail: "64rem"
-  measure: "56rem"
+  measure: "60rem"
   state: "34rem"
   section: "3rem"
   card-pad: "0.85rem 1rem"
@@ -195,7 +195,7 @@ The palette is a cool, near-achromatic paper family with a single deep-teal acce
 - **Display** (600, clamp(1.35rem, 1.05rem + 1.6vw, 1.9rem), line-height 1.4, -0.01em tracking): the edge sentence — the single claim a page exists for. The largest text on any page and the only display-scale element.
 - **Title** (700, 1.6rem, -0.015em tracking): page titles on the KG bar and state pages.
 - **Section** (700, 0.95rem, 0.01em tracking): in-article section labels (Evidence, Versions, About).
-- **Body** (400, 1rem, line-height 1.7): the evidence sentences, relation lines, and footnotes. Prose measure is capped by the 56rem article container; facts read as sentences at this size, softer steps (`color-mix` 80%, then 65% of ink) distinguish evidence from claim from helper text.
+- **Body** (400, 1rem, line-height 1.7): the evidence sentences, relation lines, and footnotes. Facts read as sentences at this size, softer steps (`color-mix` 80%, then 65% of ink) distinguish evidence from claim from helper text.
 - **Small** (400, 0.85rem): metadata, kickers, header controls, footer.
 - **Caption** (400, 0.9rem, line-height 1.7): the About-block prose and boxed notices — a hair below body, softened ink.
 - **Name** (650-700, 1.05rem): KG names on the root page and the header brand wordmark.
@@ -213,7 +213,7 @@ The complete size ramp in use, smallest to largest. Steps between body and label
 
 ## Layout
 
-One shell, one rail. Header, main, and footer share a 64rem (`max-w-5xl`) centered container with 2rem side padding, so the brand, the page headline, and the content keep a single left rail at every viewport width. Content blocks are left-aligned to that rail, not centered — the edge article caps at 56rem and the state pages at 34rem (the only centered blocks, being terminal states).
+One shell, one rail. Header, main, and footer share a 64rem (`max-w-5xl`) centered container with 2rem side padding, so the brand, the page headline, and the content keep a single left rail at every viewport width — and a single right edge: the edge article spans main's whole content column instead of capping at its own measure, so the header controls and the research banner above never outrun the text and boxes below. The research banner stays a full-bleed strip, but its text rides the same rail. Content blocks are left-aligned to that rail, not centered; the state pages at 34rem are the only centered blocks, being terminal states.
 
 Inside the article, sections stack in a single `minmax(0, 1fr)` grid column with a fixed 3rem step (2.25rem below 40rem), so the whole page reads on one vertical rhythm. The evidence table and relation line keep one label column every row aligns to. Density is calm: 0.75rem between KG rows, 1rem card padding, 0.35rem between version pills.
 
@@ -251,7 +251,7 @@ Utility-square with rounded working edges. Interactive smalls — buttons, input
 ### Cards / Containers
 - **KG row:** 10px radius, 1px edge border, paper background, 0.85rem x 1rem padding; name, canonical identifier, and the measured pill row inside.
 - **Edge node:** 10px radius card holding one side of the relationship diagram — uppercase role label, 1.1rem 700 name, category, and an ID line with a copy chip.
-- **Boxes/notes:** known-error and bar notices are recessed fills with hairline borders; the known-error box adds a 3px Caution Amber left bar.
+- **Boxes/notes:** known-error and bar notices are recessed fills with hairline borders and the standard 10px box radius; the known-error box adds a 3px Caution Amber left bar whose ends follow the rounding.
 
 ### Versions Timeline
 A wrapping row of step pills; the current release fills solid teal with paper text (its count badge inverts to a tint of the fill). Hover re-inks the border. The active state is the only solid-fill navigation element, and this component is the page's single owner of version and latest state. There is no kicker above the sentence on a decoded edge page: the claim's opening KG name (linked to the source's own documentation) is the page's only KG-name link up top, and the header's context-scoped random button owns "another edge from this graph and release".
@@ -260,7 +260,7 @@ A wrapping row of step pills; the current release fills solid teal with paper te
 A one-line caption under the heading names the two releases in short labels ("1 field changed from 1.23.3 to 1.23.4"); there is no legend, because every line below already carries its `+`/`-` marker, a visually-hidden word, and its field name. Changes render as classic +/- hunks: every change is a full-width line with a light green (added) or light red (removed) backdrop, and the value in a mono chip on the same tint, one step stronger. Changed values render as two stacked lines (struck old above, new below), never joined by an arrow or any other icon; the diff contains no icons at all. Colour is the backup signal, not the primary one. When a list change is exactly one object out and one object in, the panel diffs the two objects field by field and addresses each moved field by its full dotted path in mono ("sources.infores:drugapprovals-kp.source_record_urls"), so a list holding several sources still says whose field changed — never the whole objects as raw JSON. Group headings ("Changed lists") appear only when a heading batches several entries; a single-entry group starts straight at the changed lines.
 
 ### Navigation
-A single site header: brand wordmark left, random-edge primary button and theme toggle right, on the shared 64rem rail with a hairline bottom border. The random button is context-scoped (whole store, one KG, or one release) so it never surprises. Below it, the research-use banner spans full width on a recessed fill — a legal boundary, styled as a banner but always in theme colors.
+A single site header: brand wordmark left, random-edge primary button and theme toggle right, on the shared 64rem rail with a hairline bottom border. The random button is context-scoped (whole store, one KG, or one release) so it never surprises. Below it, the research-use banner spans the viewport as a recessed fill, but its text rides the shared rail — a legal boundary, always banner-treated and always in theme colors.
 
 ### Signature Component: The Relationship Diagram
 Two edge-node cards joined by a centered predicate (arrow icon, human-readable predicate, raw curie beneath). The clearest one-glance statement of what the edge asserts; collapses to a vertical stack below 48rem with the arrow rotated 90deg.
