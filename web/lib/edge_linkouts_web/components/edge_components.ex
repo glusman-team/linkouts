@@ -250,7 +250,7 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
             aria-current={step.key == @current && "page"}
           >
             <span class="timeline-label">{step.label}</span>
-            <span :if={step.changes} class="count-badge">
+            <span :if={step.changes && step.changes > 0} class="count-badge">
               {step.changes} change{if step.changes == 1, do: "", else: "s"}
             </span>
             <span :if={step.changes == 0} class="count-badge">no changes</span>
