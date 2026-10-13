@@ -194,7 +194,7 @@ The palette is a cool, near-achromatic paper family with a single deep-teal acce
 ### Hierarchy
 - **Display** (600, clamp(1.35rem, 1.05rem + 1.6vw, 1.9rem), line-height 1.4, -0.01em tracking): the edge sentence — the single claim a page exists for. The largest text on any page and the only display-scale element.
 - **Title** (700, 1.6rem, -0.015em tracking): page titles on the KG bar and state pages.
-- **Section** (700, 0.95rem, 0.01em tracking): in-article section labels (Evidence, Versions, About).
+- **Section** (700, 0.78rem, 0.08em tracking, uppercase): the anchored kicker for edge-page sections (Stored versions, Changes, About) — softened ink, closed on the right by a 1px hairline rule, speaking the same label language as node roles and diff group headings.
 - **Body** (400, 1rem, line-height 1.7): the evidence sentences, relation lines, and footnotes. Facts read as sentences at this size, softer steps (`color-mix` 80%, then 65% of ink) distinguish evidence from claim from helper text.
 - **Small** (400, 0.85rem): metadata, kickers, header controls, footer.
 - **Caption** (400, 0.9rem, line-height 1.7): the About-block prose and boxed notices — a hair below body, softened ink.
@@ -204,7 +204,7 @@ The palette is a cool, near-achromatic paper family with a single deep-teal acce
 
 ### Scale
 The complete size ramp in use, smallest to largest. Steps between body and label are micro-steps for chips and metadata, not new roles:
-0.7rem (micro badges: latest, counts) · 0.74rem (identifier chips) · 0.75rem (version pills, copy buttons, canonical ids) · 0.78rem (labels, mono code) · 0.8rem (id lines, footer) · 0.82rem (timeline steps) · 0.85rem (small controls, diff lines) · 0.88rem (diff summary) · 0.9rem (caption: about prose, notices) · 0.95rem (section titles, boxed notes) · 1rem (body) · 1.05rem (KG names, brand) · 1.1rem (edge-node names) · 1.6rem (page titles) · clamp(1.35rem, 1.05rem + 1.6vw, 1.9rem) (edge sentence).
+0.7rem (micro badges: latest, counts) · 0.74rem (identifier chips) · 0.75rem (version pills, copy buttons, canonical ids) · 0.78rem (labels, section kickers, mono code) · 0.8rem (id lines, footer) · 0.82rem (timeline steps) · 0.85rem (small controls, diff lines) · 0.88rem (diff summary) · 0.9rem (caption: about prose, notices) · 0.95rem (boxed notes) · 1rem (body) · 1.05rem (KG names, brand) · 1.1rem (edge-node names) · 1.6rem (page titles) · clamp(1.35rem, 1.05rem + 1.6vw, 1.9rem) (edge sentence).
 
 ### Named Rules
 **The Sentence Rule.** Facts about an edge are written as prose sentences with links inline, never as label-value pairs the reader must decode. The claim and its evidence sit at the same size so they read as one argument.

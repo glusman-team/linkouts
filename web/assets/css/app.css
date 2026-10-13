@@ -250,10 +250,25 @@ code, kbd, pre {
 /* --- shared bits -------------------------------------------------------------- */
 
 .section-title {
-  font-size: 0.95rem;
+  /* The edge-page sections share one anchored kicker: the uppercase label language the page
+     already uses for node roles and diff group headings, tied to the column by a hairline
+     rule, so a heading never floats as a stray bold line between blocks. */
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.78rem;
   font-weight: 700;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-base-content) 60%, var(--color-base-100));
   margin-bottom: 0.6rem;
+}
+
+.section-title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--color-base-300);
 }
 
 .ext-link {
