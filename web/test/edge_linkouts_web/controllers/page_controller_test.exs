@@ -54,7 +54,7 @@ defmodule EdgeLinkoutsWeb.PageControllerTest do
       refute html =~ "version-pill version-pill-latest"
     end
 
-    test "the counts line tags the newest release when the config calls it latest", %{conn: conn} do
+    test "the counts line stays bare; the pill row carries the latest badge", %{conn: conn} do
       # The fixture index stops at 1.16.0 while the config's latest_version is 1.23.5;
       # re-seed it with that release present so the newest stored release IS the latest.
       # The home page reads releases from the pool index, so no edge document is needed.
@@ -66,7 +66,12 @@ defmodule EdgeLinkoutsWeb.PageControllerTest do
 
       html = conn |> get(~p"/") |> html_response(200)
 
-      assert html =~ ~r/edges in 1\.23\.5<[^>]*class="latest-badge"/s
+      # The badge sits beside the 1.23.5 pill, not on the counts line above: one latest
+      # tag per row, in the row the reader acts on.
+      assert html =~ "edges in 1.23.5</span>"
+
+      assert html =~
+               ~r/version-pill[^>]*>\s*1\.23\.5\s*<\/a>\s*<span[^>]*class="latest-badge"/s
     end
 
     test "the counts are the newest release's, not a sum over releases", %{conn: conn} do

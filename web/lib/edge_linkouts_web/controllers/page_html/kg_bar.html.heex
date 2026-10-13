@@ -30,10 +30,7 @@
       {@row.canonical}
     </code>
     <span class="kg-counts" title="Edges in the newest release">
-      {length(@row.releases)} {plural(length(@row.releases), "release")} · {thousands(@row.edges)} edges in {@row.newest}<span
-        :if={@row.newest_latest?}
-        class="latest-badge"
-      >latest</span>
+      {length(@row.releases)} {plural(length(@row.releases), "release")} · {thousands(@row.edges)} edges in {@row.newest}
     </span>
   </p>
 

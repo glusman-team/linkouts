@@ -93,16 +93,9 @@ defmodule EdgeLinkoutsWeb.PageController do
       # The newest release's edge count, not a sum: releases of one graph re-assert largely the
       # same edges, so adding them would report a graph several times its real size.
       edges: edges_in(releases),
-      newest: newest_label(releases),
-      newest_latest?: newest_latest?(releases)
+      newest: newest_label(releases)
     }
   end
-
-  # Releases are sorted newest first, so the head is both the label the counts line shows
-  # and the pill row's first entry; the badge is only for a newest release the config also
-  # tags as latest, so a stale latest_version never claims "latest" on an older release.
-  defp newest_latest?([%{latest?: latest?} | _rest]), do: latest?
-  defp newest_latest?([]), do: false
 
   defp edges_in([%{edges: edges} | _rest]), do: edges
   defp edges_in([]), do: 0
