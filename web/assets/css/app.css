@@ -772,6 +772,12 @@ code, kbd, pre {
   border-radius: var(--radius-box);
 }
 
+/* Stacked notices (a release with more than one defect) keep one blank line between
+   them, like consecutive paragraphs. */
+.edge-known-error + .edge-known-error {
+  margin-top: 0.75rem;
+}
+
 /* A list fold lives inside its sentence: the items past the cap sit behind an inline button
    (a <details> was block-shaped in some engines and opened a vertical gap), so "…, C,
    [Show 22 more]" reads as a chip in the middle of the paragraph, and clicking continues the
