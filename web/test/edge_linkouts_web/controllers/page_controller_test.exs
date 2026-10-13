@@ -68,7 +68,8 @@ defmodule EdgeLinkoutsWeb.PageControllerTest do
 
       # The badge sits beside the 1.23.5 pill, not on the counts line above: one latest
       # tag per row, in the row the reader acts on.
-      assert html =~ "edges in 1.23.5</span>"
+      assert html =~ "edges in 1.23.5"
+      refute html =~ ~r/edges in 1\.23\.5\s*<span[^>]*latest-badge/s
 
       assert html =~
                ~r/version-pill[^>]*>\s*1\.23\.5\s*<\/a>\s*<span[^>]*class="latest-badge"/s
