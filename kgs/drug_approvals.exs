@@ -35,6 +35,11 @@
       description:
         "The per-edge linkouts on db.systemsbiology.net do not exist for this version.",
       versions: ["1.23.3"]
+    },
+    %{
+      description:
+        "The qualifiers on these edges are improperly scoped and include some disallowed values.",
+      versions: ["1.23.3", "1.23.4", "1.23.5"]
     }
   ],
 
