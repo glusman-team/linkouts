@@ -43,6 +43,8 @@
     "DOI" => "https://doi.org/$value",
     # DailyMed SPL ids arrive as "dailymed:<uuid>" in the drug approvals KG.
     "DAILYMED" => "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=$value",
+    # DrugBank drug ids arrive on DAKP edges whose subject the node join named from DrugBank.
+    "DRUGBANK" => "https://go.drugbank.com/drugs/$value",
     # Information resources arrive as "infores:<slug>" and resolve to their page in the
     # Translator information resource registry's catalog (infores:dailymed, infores:faers, ...).
     "INFORES" =>

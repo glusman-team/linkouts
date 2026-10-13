@@ -24,7 +24,7 @@
   # The newest release this config was written against. The page tags that version as the
   # latest one in the header and on the version timeline, so a reader never has to diff two
   # versions to know which one reflects the current knowledge graph.
-  latest_version: "1.23.4",
+  latest_version: "1.23.5",
 
   # Known issues: each entry states one defect, then lists every release where it occurs
   # (:versions, requirements in the {:version, ...} syntax — a bare version matches exactly).

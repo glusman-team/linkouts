@@ -45,28 +45,28 @@ defmodule EdgeLinkoutsWeb.PageControllerTest do
       html = conn |> get(~p"/") |> html_response(200)
 
       # The badge only tags a release the store actually holds. The config's latest_version is
-      # 1.23.4 and these fixtures stop at 1.16.0, so nothing is tagged yet; the badge path is
+      # 1.23.5 and these fixtures stop at 1.16.0, so nothing is tagged yet; the badge path is
       # exercised again as soon as that release is loaded. The bar itself must still render.
       latest = Display.get("infores:drugapprovals-kp").latest_version
-      assert latest == "1.23.4"
+      assert latest == "1.23.5"
       refute html =~ "latest-badge"
       assert html =~ "version-pill-group"
       refute html =~ "version-pill version-pill-latest"
     end
 
     test "the counts line tags the newest release when the config calls it latest", %{conn: conn} do
-      # The fixture index stops at 1.16.0 while the config's latest_version is 1.23.4;
+      # The fixture index stops at 1.16.0 while the config's latest_version is 1.23.5;
       # re-seed it with that release present so the newest stored release IS the latest.
       # The home page reads releases from the pool index, so no edge document is needed.
       Cosmos.Fake.seed(Fixtures.docs())
 
       Cosmos.Fake.seed_pool_index(%{
-        Fixtures.slug() => %{"1.11.2" => 6, "1.16.0" => 6, "1.23.4" => 6}
+        Fixtures.slug() => %{"1.11.2" => 6, "1.16.0" => 6, "1.23.5" => 6}
       })
 
       html = conn |> get(~p"/") |> html_response(200)
 
-      assert html =~ ~r/edges in 1\.23\.4<[^>]*class="latest-badge"/s
+      assert html =~ ~r/edges in 1\.23\.5<[^>]*class="latest-badge"/s
     end
 
     test "the counts are the newest release's, not a sum over releases", %{conn: conn} do
