@@ -678,6 +678,54 @@ defmodule EdgeLinkouts.DisplayTest do
       refute rendered =~ "C16573"
     end
 
+    test "the qualifier stack prefers concept names over the raw log lines" do
+      # The RIG resolves context qualifiers to UMLS concepts and stores the reader's name in
+      # {qualifier}_name; the claim shows that name, not the raw log line. A source error that
+      # repeats one concept across two qualifiers still renders both — the display reports the
+      # stored facts, it does not clean them up.
+      config = Display.get("infores:drugapprovals-kp")
+
+      doc = %{
+        "subject" => "CHEBI:1",
+        "subject_name" => "aspirin",
+        "object" => "MONDO:1",
+        "object_name" => "fever",
+        "predicate" => "biolink:treats",
+        "population_context_qualifier" => "UMLS:C1706450",
+        "population_context_qualifier_name" => "Legal Adult",
+        "sex_qualifier" => "UMLS:C1706450",
+        "sex_qualifier_name" => "Legal Adult",
+        "supporting_text" => [
+          "original_population_context_qualifier: Adults",
+          "original_sex_qualifier: adults"
+        ]
+      }
+
+      rendered = config |> Display.edge(doc, @v1) |> Segment.to_text()
+
+      assert rendered =~ ", in Legal Adult, in Legal Adult."
+      refute rendered =~ ": Adults"
+      refute rendered =~ "original_sex_qualifier"
+    end
+
+    test "a qualifier without a concept name still reads from the source log line" do
+      config = Display.get("infores:drugapprovals-kp")
+
+      doc = %{
+        "subject" => "CHEBI:1",
+        "subject_name" => "aspirin",
+        "object" => "MONDO:1",
+        "object_name" => "fever",
+        "predicate" => "biolink:treats",
+        "population_context_qualifier" => "UMLS:C1706450",
+        "supporting_text" => ["original_population_context_qualifier: pediatric patients"]
+      }
+
+      rendered = config |> Display.edge(doc, @v1) |> Segment.to_text()
+
+      assert rendered =~ ", in pediatric patients."
+    end
+
     test "a qualifier without a supporting-text phrase falls back to the labelled CURIE" do
       config = Display.get("infores:drugapprovals-kp")
 

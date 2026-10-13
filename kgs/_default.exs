@@ -95,10 +95,21 @@
     # fragments ("dosage" alone, a singular "adult"); the labelled CURIE chip is the fallback
     # wherever the log line is missing. Gates are {:present} of the qualifier itself, so a KG
     # that populates these fields at any version renders them.
+    #
+    # The RIG also resolves most context qualifiers to a concept, storing the reader's name in
+    # {qualifier}_name. The name is the preferred label ("Legal Adult", not the log's raw
+    # "Adults"); the log line remains the fallback for qualifiers a release shipped without
+    # names, and the CURIE chip stays the last resort.
+    "anatomical_name" => {:field, "anatomical_context_qualifier_name"},
+    "population_name" => {:field, "population_context_qualifier_name"},
+    "sex_name" => {:field, "sex_qualifier_name"},
+    "temporal_name" => {:field, "temporal_context_qualifier_name"},
     "qualifier_anatomical" =>
       {:if, [{:present, "anatomical_context_qualifier"}],
-       {:supporting, "original_anatomical_context_qualifier", ", in the ", "", %{},
-        ", anatomical context {anatomical_qualifier_link}"}},
+       {:if, [{:present, "anatomical_context_qualifier_name"}],
+        ", in the {anatomical_name}",
+        {:supporting, "original_anatomical_context_qualifier", ", in the ", "", %{},
+         ", anatomical context {anatomical_qualifier_link}"}}},
     "qualifier_frequency" =>
       {:if, [{:present, "frequency_qualifier"}],
        {:supporting, "original_frequency_qualifier", ", dosed ", "",
@@ -109,28 +120,34 @@
         }, ", frequency {frequency_qualifier_link}"}},
     "qualifier_population" =>
       {:if, [{:present, "population_context_qualifier"}],
-       {:supporting, "original_population_context_qualifier", ", in ", "", %{},
-        ", population context {population_qualifier_link}"}},
+       {:if, [{:present, "population_context_qualifier_name"}],
+        ", in {population_name}",
+        {:supporting, "original_population_context_qualifier", ", in ", "", %{},
+         ", population context {population_qualifier_link}"}}},
     "qualifier_sex" =>
       {:if, [{:present, "sex_qualifier"}],
-       {:supporting, "original_sex_qualifier", ", in ", "",
-        %{
-          "adult" => "adults",
-          "woman" => "women",
-          "man" => "men",
-          "child" => "children",
-          "female" => "females",
-          "male" => "males"
-        }, ", sex {sex_qualifier_link}"}},
+       {:if, [{:present, "sex_qualifier_name"}],
+        ", in {sex_name}",
+        {:supporting, "original_sex_qualifier", ", in ", "",
+         %{
+           "adult" => "adults",
+           "woman" => "women",
+           "man" => "men",
+           "child" => "children",
+           "female" => "females",
+           "male" => "males"
+         }, ", sex {sex_qualifier_link}"}}},
     "qualifier_temporal" =>
       {:if, [{:present, "temporal_context_qualifier"}],
-       {:supporting, "original_temporal_context_qualifier", ", ", "",
-        %{
-          "extended period of time" => "over an extended period of time",
-          "7 days" => "for 7 days",
-          "preoperatively" => "preoperatively",
-          "postoperatively" => "postoperatively"
-        }, ", temporal context {temporal_qualifier_link}"}},
+       {:if, [{:present, "temporal_context_qualifier_name"}],
+        ", {temporal_name}",
+        {:supporting, "original_temporal_context_qualifier", ", ", "",
+         %{
+           "extended period of time" => "over an extended period of time",
+           "7 days" => "for 7 days",
+           "preoperatively" => "preoperatively",
+           "postoperatively" => "postoperatively"
+         }, ", temporal context {temporal_qualifier_link}"}}},
     "anatomical_qualifier_link" =>
       {:link, "anatomical_context_qualifier", "anatomical_context_qualifier"},
     "frequency_qualifier_link" => {:link, "frequency_qualifier", "frequency_qualifier"},
