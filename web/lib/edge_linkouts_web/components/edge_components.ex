@@ -253,7 +253,6 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
             <span :if={step.changes && step.changes > 0} class="count-badge">
               {step.changes} change{if step.changes == 1, do: "", else: "s"}
             </span>
-            <span :if={step.changes == 0} class="count-badge">no changes</span>
           </.link>
           <%!-- Beside the pill, not inside it: the same chip the home page's pill row uses.
                Reading order is "1.23.4, latest", so the chip trails its pill on the right. --%>
