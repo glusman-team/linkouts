@@ -55,16 +55,19 @@
         </header>
 
         <div id="edge-detail" aria-live="polite" class="edge-body">
-          <%!-- A release the config flags with a known error renders a notice: the free-text
-               description is the KG curator's own words about what is wrong. --%>
-          <p :if={@known_error} class="edge-known-error" role="note">
-            <.icon
-              name="hero-exclamation-triangle"
-              class="size-4 inline-block shrink-0 align-[-0.125em] mr-1 text-warning"
-            />
-            <strong>Known issue in release {version_label(@key)}.</strong>
-            {@known_error.description}
-          </p>
+          <%!-- A release the config flags with known errors renders one notice per issue:
+               the free-text description is the KG curator's own words about what is wrong,
+               and a release can carry more than one defect. --%>
+          <div :if={@known_errors != []}>
+            <p :for={error <- @known_errors} class="edge-known-error" role="note">
+              <.icon
+                name="hero-exclamation-triangle"
+                class="size-4 inline-block shrink-0 align-[-0.125em] mr-1 text-warning"
+              />
+              <strong>Known issue in release {version_label(@key)}.</strong>
+              {error.description}
+            </p>
+          </div>
           <%!-- The claim and its evidence, as on the legacy page: the sentence first, the
                evidence lines directly beneath it, both before anything a reader might have to
                scroll for. --%>

@@ -539,6 +539,23 @@ defmodule EdgeLinkouts.DisplayTest do
       assert Display.known_error(flagged, "2.0.0") == nil
     end
 
+    test "known_errors lists every matching issue, so an affected release shows all of them" do
+      assert %Display.Config{} = config = Display.get("infores:drugapprovals-kp")
+
+      # 1.23.3 carries both shipped defects; 1.23.4 and 1.23.5 carry only the qualifier
+      # scoping problem.
+      assert [%{description: first}, %{description: second}] =
+               Display.known_errors(config, "1.23.3")
+
+      assert first =~ "db.systemsbiology.net"
+      assert second =~ "improperly scoped"
+
+      assert [%{description: only}] = Display.known_errors(config, "1.23.5")
+      assert only =~ "improperly scoped"
+
+      assert Display.known_errors(nil, "1.23.3") == []
+    end
+
     test "the disease-context clause renders whenever a displayable name exists" do
       # The gate is on the name field, not the version: a CURIE without a name would print
       # " in the context of " with nothing after it, so it is suppressed instead; a name at

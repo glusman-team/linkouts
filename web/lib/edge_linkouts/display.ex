@@ -287,7 +287,21 @@ defmodule EdgeLinkouts.Display do
   def known_error(%Config{known_errors: nil}, _version_or_key), do: nil
 
   def known_error(%Config{} = config, version_or_key) do
-    Enum.find(config.known_errors, fn error ->
+    config |> known_errors(version_or_key) |> List.first()
+  end
+
+  @doc """
+  Every known issue whose version requirements match `version_or_key`.
+
+  A release can carry more than one defect, so the edge page renders one notice per
+  matching entry instead of only the first.
+  """
+  @spec known_errors(t() | nil, String.t() | nil) :: [map()]
+  def known_errors(nil, _version_or_key), do: []
+  def known_errors(%Config{known_errors: nil}, _version_or_key), do: []
+
+  def known_errors(%Config{} = config, version_or_key) do
+    Enum.filter(config.known_errors, fn error ->
       Enum.any?(error.versions, &Version.satisfies?(version_or_key, &1))
     end)
   end

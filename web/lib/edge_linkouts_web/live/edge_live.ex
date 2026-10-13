@@ -115,7 +115,7 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
           latest: latest?(config, key),
           evidence: evidence(config, doc, key),
           footnote: footnote(config, doc, key),
-          known_error: known_error(config, key),
+          known_errors: known_errors(config, key),
           diff: diff(blob, prev_key, doc),
           prev_key: prev_key,
           config: config,
@@ -153,8 +153,8 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
   defp footnote(nil, _doc, _key), do: []
   defp footnote(config, doc, key), do: Display.footnote(config, doc, key)
 
-  defp known_error(nil, _key), do: nil
-  defp known_error(config, key), do: Display.known_error(config, key)
+  defp known_errors(nil, _key), do: []
+  defp known_errors(config, key), do: Display.known_errors(config, key)
 
   defp page_title(nil, _doc, key, _id), do: "Edge #{Codec.kg_name(key)}"
   defp page_title(config, doc, key, _id), do: Display.title(config, doc, key)
