@@ -6,6 +6,45 @@ The app runs on Fly.io behind Cloudflare and reads from Azure Cosmos DB on the f
 Everything in this section needs credentials and costs or changes something real. None of it runs
 in CI or from `make check`.
 
+## Isolated DEV preview
+
+`fly.dev.toml` deploys to `edge-linkouts-dev`, not the production `edge-linkouts` app. It
+runs the same production-mode release with `LINKOUTS_PREVIEW_FIXTURES` set to a file
+injected by Fly's `[[files]]` configuration. Only the public committed contract sample
+(`web/test/fixtures/contract/docs.ndjson`) is served. The preview has no Cosmos credentials,
+no production cluster membership, and no production origin key. Never deploy Phoenix's
+`MIX_ENV=dev` debug server publicly.
+
+First-time setup, from the repository root:
+
+```sh
+flyctl apps create edge-linkouts-dev --org personal
+# Generate a separate session signing key without printing it or reusing production's.
+python3 -c 'import secrets; print("SECRET_KEY_BASE=" + secrets.token_hex(64))' |
+  flyctl secrets import -a edge-linkouts-dev
+```
+
+After the local gates pass:
+
+```sh
+make check
+make ex-audit
+flyctl config validate -c fly.dev.toml
+flyctl deploy -c fly.dev.toml --remote-only --ha=false
+curl -fsS https://edge-linkouts-dev.fly.dev/healthz
+```
+
+Open `https://edge-linkouts-dev.fly.dev/` or a sample edge at
+`https://edge-linkouts-dev.fly.dev/edges/12ae7437-12dc-3c2a-b487-5297c09fc5e5`.
+A visible "DEV preview" notice and `noindex, nofollow` metadata distinguish it from the
+live graph. Fixture releases are historical samples, not the current live dataset.
+The VM stops when idle and starts on a request; `--ha=false` keeps this a single-machine
+preview. `fly.toml` and the push-to-main production deployment are unchanged. Do not push
+preview-only work to main until it is approved for production.
+
+An unset or empty `LINKOUTS_PREVIEW_FIXTURES` keeps normal production behavior: Cosmos
+credentials are mandatory. A nonempty fixture path that cannot be loaded fails at boot.
+
 ## Budget
 
 The free tier's 1000 RU/s is shared. The CLI gets the burst budget it needs for ingestion,

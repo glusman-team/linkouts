@@ -47,6 +47,17 @@ config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,
 config :edge_linkouts,
   ru_budget_web: String.to_integer(System.get_env("RU_BUDGET_WEB", "150"))
 
+# A separate public DEV preview runs a production release with only bundled sample data.
+# This never enables Phoenix's development error pages or needs Cosmos credentials.
+preview_fixtures =
+  case System.get_env("LINKOUTS_PREVIEW_FIXTURES") do
+    value when is_binary(value) and value != "" -> value
+    _ -> nil
+  end
+
+config :edge_linkouts,
+  fixture_preview: config_env() == :prod and is_binary(preview_fixtures)
+
 # Cache TTL classes, env-tunable. Set only when the variable is present so that
 # config/test.exs' dedupe_ttl_ms: 0 (caching off in tests) is not clobbered.
 if dedupe_ttl = System.get_env("DEDUPE_TTL_MS") do
@@ -148,41 +159,47 @@ if config_env() == :prod do
     config :edge_linkouts, origin_check_key: origin_key
   end
 
-  # Cosmos read-only access (see docs/adr/0002-verified-api-surface.md). The web app is
-  # read-only and sees the read-only key only; the read-write key never reaches it.
-  cosmos_endpoint =
-    System.get_env("COSMOS_ENDPOINT") ||
-      EdgeLinkouts.Cosmos.HTTP.connection_string_key(
-        System.get_env("COSMOS_PRIMARY_CONNECTION_STRING_R"),
-        "AccountEndpoint"
-      ) ||
-      raise """
-      environment variable COSMOS_ENDPOINT is missing.
-      Set it to the Cosmos account endpoint, e.g. https://<account>.documents.azure.com:443/
-      (or export COSMOS_PRIMARY_CONNECTION_STRING_R; the endpoint and key are read from it).
-      """
+  if preview_fixtures do
+    config :edge_linkouts,
+      cosmos_backend: EdgeLinkouts.Cosmos.File,
+      cosmos_file: preview_fixtures
+  else
+    # Cosmos read-only access (see docs/adr/0002-verified-api-surface.md). The web app is
+    # read-only and sees the read-only key only; the read-write key never reaches it.
+    cosmos_endpoint =
+      System.get_env("COSMOS_ENDPOINT") ||
+        EdgeLinkouts.Cosmos.HTTP.connection_string_key(
+          System.get_env("COSMOS_PRIMARY_CONNECTION_STRING_R"),
+          "AccountEndpoint"
+        ) ||
+        raise """
+        environment variable COSMOS_ENDPOINT is missing.
+        Set it to the Cosmos account endpoint, e.g. https://<account>.documents.azure.com:443/
+        (or export COSMOS_PRIMARY_CONNECTION_STRING_R; the endpoint and key are read from it).
+        """
 
-  cosmos_key =
-    System.get_env("COSMOS_READ_ONLY_KEY") ||
-      EdgeLinkouts.Cosmos.HTTP.connection_string_key(
-        System.get_env("COSMOS_PRIMARY_CONNECTION_STRING_R"),
-        "AccountKey"
-      ) ||
-      raise """
-      environment variable COSMOS_READ_ONLY_KEY is missing.
-      Azure Portal -> your Cosmos account -> Settings -> Keys -> "Primary or secondary
-      read-only keys". Never set the read-write key here: the web app cannot write and
-      must not be able to.
-      """
+    cosmos_key =
+      System.get_env("COSMOS_READ_ONLY_KEY") ||
+        EdgeLinkouts.Cosmos.HTTP.connection_string_key(
+          System.get_env("COSMOS_PRIMARY_CONNECTION_STRING_R"),
+          "AccountKey"
+        ) ||
+        raise """
+        environment variable COSMOS_READ_ONLY_KEY is missing.
+        Azure Portal -> your Cosmos account -> Settings -> Keys -> "Primary or secondary
+        read-only keys". Never set the read-write key here: the web app cannot write and
+        must not be able to.
+        """
 
-  config :edge_linkouts,
-    cosmos_backend: EdgeLinkouts.Cosmos.HTTP,
-    cosmos_http: %{
-      endpoint: cosmos_endpoint,
-      db: System.get_env("COSMOS_DB", "edge_linkouts"),
-      container: System.get_env("COSMOS_CONTAINER", "edges"),
-      key: cosmos_key
-    }
+    config :edge_linkouts,
+      cosmos_backend: EdgeLinkouts.Cosmos.HTTP,
+      cosmos_http: %{
+        endpoint: cosmos_endpoint,
+        db: System.get_env("COSMOS_DB", "edge_linkouts"),
+        container: System.get_env("COSMOS_CONTAINER", "edges"),
+        key: cosmos_key
+      }
+  end
 
   config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],

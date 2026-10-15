@@ -1,0 +1,43 @@
+# Separate fixture-backed DEV preview. Always deploy with: flyctl deploy -c fly.dev.toml
+# No production Cosmos credentials, cluster membership, or origin key belongs in this app.
+app = 'edge-linkouts-dev'
+primary_region = 'lax'
+kill_signal = 'SIGTERM'
+kill_timeout = '5s'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  PHX_SERVER = 'true'
+  PHX_HOST = 'edge-linkouts-dev.fly.dev'
+  PORT = '8080'
+  LINKOUTS_PREVIEW_FIXTURES = '/app/preview-docs.ndjson'
+
+# Fly injects only the committed public sample, never the local dataset or a secret.
+[[files]]
+  guest_path = '/app/preview-docs.ndjson'
+  local_path = 'web/test/fixtures/contract/docs.ndjson'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = 'requests'
+    soft_limit = 100
+    hard_limit = 200
+
+  [[http_service.checks]]
+    grace_period = '10s'
+    interval = '10s'
+    method = 'GET'
+    path = '/healthz'
+    timeout = '2s'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'

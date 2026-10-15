@@ -43,6 +43,9 @@ defmodule EdgeLinkoutsWeb.Layouts do
 
   def app(assigns) do
     ~H"""
+    <p :if={Application.get_env(:edge_linkouts, :fixture_preview, false)} class="preview-notice">
+      <strong>DEV preview</strong> Sample data only, not the live knowledge graph.
+    </p>
     <p class="research-notice" role="note" aria-label="Research use only">
       <svg
         xmlns="http://www.w3.org/2000/svg"

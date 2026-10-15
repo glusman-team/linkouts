@@ -13,6 +13,35 @@ defmodule EdgeLinkoutsWeb.PageControllerTest do
     :ok
   end
 
+  describe "the fixture preview" do
+    test "labels sample data and prevents indexing", %{conn: conn} do
+      previous = Application.fetch_env(:edge_linkouts, :fixture_preview)
+      Application.put_env(:edge_linkouts, :fixture_preview, true)
+
+      on_exit(fn ->
+        case previous do
+          {:ok, value} -> Application.put_env(:edge_linkouts, :fixture_preview, value)
+          :error -> Application.delete_env(:edge_linkouts, :fixture_preview)
+        end
+      end)
+
+      Cosmos.Fake.seed(Fixtures.docs())
+      html = conn |> get(~p"/") |> html_response(200)
+
+      assert html =~ "DEV preview"
+      assert html =~ "Sample data only, not the live knowledge graph."
+      assert html =~ ~s(name="robots" content="noindex, nofollow")
+    end
+
+    test "the normal site has no preview notice", %{conn: conn} do
+      Cosmos.Fake.seed(Fixtures.docs())
+      html = conn |> get(~p"/") |> html_response(200)
+
+      refute html =~ "DEV preview"
+      refute html =~ ~s(name="robots" content="noindex, nofollow")
+    end
+  end
+
   describe "the bar" do
     test "the root lists each graph with its releases", %{conn: conn} do
       Cosmos.Fake.seed(Fixtures.docs())
