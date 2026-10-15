@@ -120,7 +120,10 @@
   --font-sans: "Atkinson Hyperlegible Next", system-ui, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", monospace;
   /* Minor third: one 1.2 ratio, anchored to the reader's default body size.
-     Metadata stops at the first step below body, rather than shrinking identifiers. */
+     Metadata stops at the first step below body, rather than shrinking identifiers.
+     --type-micro is the second step down and stays off content: it sizes only the
+     uppercase badge micro-labels, which are short, bold, and never carry an identifier. */
+  --type-micro: calc(1rem / 1.44);
   --type-small: calc(1rem / 1.2);
   --type-body: 1rem;
   --type-lead: 1.2rem;
@@ -520,13 +523,15 @@ code, kbd, pre {
   overflow-wrap: anywhere;
 }
 
+/* One step below the pill it trails, so the badge reads as an annotation on the version
+   rather than a second pill of equal weight. */
 .latest-badge {
   display: inline-block;
-  font-size: var(--type-small);
+  font-size: var(--type-micro);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 0.1rem 0.5rem;
+  padding: 0.05rem 0.42rem;
   border-radius: 999px;
   background: color-mix(in oklab, var(--color-success) 18%, var(--color-base-100));
   color: var(--color-success);

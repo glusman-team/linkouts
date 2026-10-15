@@ -105,7 +105,7 @@ components:
     backgroundColor: "color-mix(in oklab, {colors.verdict-green} 18%, {colors.cool-paper})"
     textColor: "{colors.verdict-green}"
     rounded: "{rounded.pill}"
-    padding: "0.1rem 0.5rem"
+    padding: "0.05rem 0.42rem"
   count-badge:
     backgroundColor: "{colors.paper-recessed}"
     textColor: "{colors.ink}"
@@ -196,21 +196,23 @@ The palette is a cool, near-achromatic paper family with a single deep-teal acce
 - **Title** (700, 1.44rem, line-height 1.4, -0.015em tracking): KG bar and state-page titles.
 - **Lead** (1.2rem, line-height 1.4): the source's "asserts" line, below the claim and above body. KG and node names use the same step with their own weight.
 - **Body** (400, 1rem, line-height 1.7): Methods, Provenance, About, Tips, Feedback, Known issues, and Changes. The header wordmark also uses body size, with weight rather than another size for emphasis.
-- **Small** (1rem / 1.2, about 0.8333rem): section kickers, metadata, controls, IDs, versions, diff paths and values, count/latest badges, and footer. Mono roles keep their mono face; semantic colors and weights retain their meanings. UI line-height is 1.5, and prose remains 1.7.
+- **Small** (1rem / 1.2, about 0.8333rem): section kickers, metadata, controls, IDs, versions, diff paths and values, count badges, and footer. Mono roles keep their mono face; semantic colors and weights retain their meanings. UI line-height is 1.5, and prose remains 1.7.
+- **Micro** (1rem / 1.44, about 0.6944rem): the uppercase `latest` badge only. It sits one step below the version pill it trails so the pair reads as label plus annotation, never as two competing pills.
 - **Label** (700, small step, 0.08em tracking, uppercase): section and node-role labels, diff group headings, state kickers. The existing trailing section hairline is unchanged.
 
 ### Scale
-A minor-third scale with a 1.2 ratio and a 1rem base. At the browser's default 16px, the five role sizes are:
+A minor-third scale with a 1.2 ratio and a 1rem base. At the browser's default 16px, the six role sizes are:
 
 | Token | rem | px | Role |
 | --- | --- | --- | --- |
+| `--type-micro` | `calc(1rem / 1.44)` | 11.11 | Uppercase badge micro-labels (`latest`), never content |
 | `--type-small` | `calc(1rem / 1.2)` | 13.33 | Metadata, labels, controls, mono |
 | `--type-body` | `1rem` | 16 | Reading text |
 | `--type-lead` | `1.2rem` | 19.2 | Source lead and names |
 | `--type-title` | `1.44rem` | 23.04 | Page titles, mobile claim floor |
 | `--type-claim` | `1.728rem` | 27.65 | Desktop claim ceiling |
 
-Do not use the next downward step (0.694rem) for content: identifiers and counts need to remain readable. Use weight, tracking, and ink level for secondary hierarchy instead of more nearly identical font sizes. Keep rem units so user text-size preferences work; the header wraps and long IDs break rather than overflowing when text is enlarged.
+`--type-micro` is the second step down and is reserved: no identifier, count, version, or prose of any kind may use it, because those have to stay readable. It exists solely so a short, bold, uppercase badge can sit visibly below the label it annotates. Everywhere else, use weight, tracking, and ink level for secondary hierarchy instead of more nearly identical font sizes. Keep rem units so user text-size preferences work; the header wraps and long IDs break rather than overflowing when text is enlarged.
 
 The scale is a consistency tool, not a guarantee of visual quality. Review actual long labels at 320px and with 200% text sizing in both themes. [Modular Scale](https://www.modularscale.com/) explains the ratio method and explicitly permits breaking the scale for legibility.
 
@@ -253,7 +255,7 @@ Utility-square with rounded working edges. Interactive smalls — buttons, input
 ### Chips and Pills
 - **Version pill:** full pill, teal 14% tint background, teal text, teal-35% tint border; mono label. The unit of navigation on the KG bar and the versions timeline.
 - **Count badge:** small-step mono full pill on Paper Recessed with hairline border; sits as a flex sibling of its pill, never nested inside it.
-- **Latest badge:** uppercase 700 micro-label, Verdict Green 18% tint; trails the version number inline in count lines and as a flex sibling in pill rows.
+- **Latest badge:** uppercase 700 micro-label at `--type-micro`, Verdict Green 18% tint; trails the version number inline in count lines and as a flex sibling in pill rows. It is always a step smaller than the pill or version it annotates.
 - **Identifier chip (`.chip`):** mono, recessed, max-width 16rem, wraps anywhere; hover re-inks to teal (it is usually a link).
 
 ### Cards / Containers
