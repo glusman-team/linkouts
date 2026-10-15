@@ -476,6 +476,23 @@ defmodule EdgeLinkouts.Codec do
       else: compare_parts(parts_a, parts_b)
   end
 
+  @doc """
+  The newest release label among the ones given, or nil for an empty list.
+
+  Accepts bare versions or full keys. Both places that tag a release "latest"
+  (the home bar's pill row and the edge page's version timeline) derive it from
+  this one function, so the two pages can never disagree about which release is
+  newest.
+  """
+  @spec newest_label([version_key()]) :: version_key() | nil
+  def newest_label([]), do: nil
+
+  def newest_label([label | rest]) do
+    Enum.reduce(rest, label, fn next, acc ->
+      if compare_versions(next, acc) == :gt, do: next, else: acc
+    end)
+  end
+
   @doc "Splits `<kg>-<version>` into `{kg, numeric_parts, suffix_text}`."
   @spec split_key(version_key()) :: {String.t(), [non_neg_integer()], String.t()}
   def split_key(key) when is_binary(key) do
@@ -490,8 +507,24 @@ defmodule EdgeLinkouts.Codec do
 
         {kg, parts, suffix}
 
+      # A bare version ("1.16.0") has no KG prefix to split off, but it is still a
+      # version: parse its parts so numeric comparison applies. Anything that is not
+      # version-shaped keeps the fallthrough ordering.
       _ ->
-        {key, [], key}
+        case Regex.run(~r/^(\d[0-9a-zA-Z.\-+]*)$/, key) do
+          [_, version] ->
+            {dotted, suffix} = split_suffix(version)
+
+            parts =
+              dotted
+              |> String.split(".")
+              |> Enum.map(&parse_part/1)
+
+            {key, parts, suffix}
+
+          _ ->
+            {key, [], key}
+        end
     end
   end
 

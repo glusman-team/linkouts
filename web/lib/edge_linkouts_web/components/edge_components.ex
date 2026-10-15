@@ -14,6 +14,7 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
 
   use EdgeLinkoutsWeb, :html
 
+  alias EdgeLinkouts.Codec
   alias EdgeLinkouts.Display.Prefixes
 
   # Field names as a reader knows them. The diff panel shares this table so a field reads the
@@ -228,16 +229,12 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
   attr :current, :string, required: true
 
   def version_timeline(assigns) do
-    # The latest release is the first pill by construction (history is sorted newest first),
-    # so the badge keys off that step, not a label match against the config: a blob
-    # accumulated out of version order still badges the true newest.
-    latest_key =
-      case List.first(assigns.history) do
-        nil -> nil
-        step -> step.key
-      end
+    # The latest badge tags the newest stored release by numeric comparison, the same
+    # Codec.newest_label rule the home page's pill row uses: a blob accumulated out of
+    # version order still badges the true newest, and the two pages can never disagree.
+    latest_label = Codec.newest_label(Enum.map(assigns.history, & &1.label))
 
-    assigns = assign(assigns, :latest_key, latest_key)
+    assigns = assign(assigns, :latest_label, latest_label)
 
     ~H"""
     <nav aria-label="Stored versions" class="timeline">
@@ -256,7 +253,7 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
           </.link>
           <%!-- Beside the pill, not inside it: the same chip the home page's pill row uses.
                Reading order is "1.23.4, latest", so the chip trails its pill on the right. --%>
-          <span :if={step.key == @latest_key} class="latest-badge">latest</span>
+          <span :if={step.label == @latest_label} class="latest-badge">latest</span>
         </li>
       </ol>
     </nav>
@@ -266,11 +263,14 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
   @doc """
   The changes between the previous and the selected version, grouped by kind and labelled in
   the reader's vocabulary. Colour never carries the diff alone: every line also shows a
-  +/- marker and a visually-hidden word for screen readers.
+  +/- marker and a visually-hidden word for screen readers. A `scope` narrows the panel to
+  one stored field's entries, for releases that changed several things at once.
   """
   attr :prev_key, :string, default: nil
   attr :key_name, :string, default: nil
   attr :diff, :list, default: nil
+  attr :edge_id, :string, default: nil, doc: "the page's edge id, for the per-field scope links"
+  attr :scope, :string, default: nil, doc: "the stored field key to narrow to (?change=)"
 
   # Nothing to compare (the oldest stored version) or nothing that changed: no section at
   # all. A "Changes" heading over an empty panel is noise; the version timeline above it
@@ -280,13 +280,13 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
   def diff_panel(%{diff: []} = assigns), do: empty_diff_panel(assigns)
 
   def diff_panel(assigns) do
-    groups =
-      case assigns.diff do
-        nil -> []
-        diff -> group_changes(diff)
-      end
+    {changes, scoped?} = scoped(assigns.diff, assigns.scope)
 
-    assigns = assign(assigns, :groups, groups)
+    assigns =
+      assign(assigns,
+        groups: group_changes(changes),
+        scoped?: scoped?
+      )
 
     ~H"""
     <section aria-label="Changes from the previous version" class="diff-panel">
@@ -303,8 +303,17 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
         <% @diff == [] -> %>
           <p>No changes from {version_label(@prev_key)} to this version.</p>
         <% true -> %>
+          <%!-- Scoped, the summary still counts the whole release's changes, so the reader
+               knows how much is hidden behind the scope. --%>
           <p class="diff-summary">
-            {diff_summary(@diff, @prev_key, @key_name)}
+            <%= if @scoped? do %>
+              Showing only {field_label(@scope)} of the {diff_summary(@diff, @prev_key, @key_name)}.
+              <.link patch={~p"/edges/#{@edge_id}?version=#{@key_name}"} class="diff-scope-clear">
+                Show every change
+              </.link>
+            <% else %>
+              {diff_summary(@diff, @prev_key, @key_name)}
+            <% end %>
           </p>
           <div :for={{title, entries} <- @groups} class="diff-group">
             <%!-- The group heading is taxonomy, not reader information: the +/- markers and
@@ -312,7 +321,12 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
                batches several entries; a single-entry group starts straight at the field. --%>
             <h3 :if={length(entries) > 1}>{title}</h3>
             <ul>
-              <.diff_entry :for={change <- entries} change={change} />
+              <.diff_entry
+                :for={change <- entries}
+                change={change}
+                edge_id={@edge_id}
+                key_name={@key_name}
+              />
             </ul>
           </div>
       <% end %>
@@ -326,6 +340,26 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
     """
   end
 
+  # A ?change= scope narrows the panel to one stored field's entries. A scope matching
+  # nothing (a stale link after the graph reingested) is ignored: the full diff renders
+  # rather than an empty panel pretending nothing changed.
+  defp scoped(nil, _scope), do: {nil, false}
+
+  defp scoped(diff, scope) when is_binary(scope) do
+    matching = Enum.filter(diff, &(field_key(&1) == scope))
+
+    if matching == [], do: {diff, false}, else: {matching, true}
+  end
+
+  defp scoped(diff, _scope), do: {diff, false}
+
+  defp field_key({:added, key, _}), do: key
+  defp field_key({:removed, key, _}), do: key
+  defp field_key({:changed, key, _, _}), do: key
+  defp field_key({:list_changed, key, _, _}), do: key
+
+  defp group_changes(nil), do: []
+
   defp group_changes(diff) do
     diff
     |> Enum.group_by(fn
@@ -338,41 +372,57 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
   end
 
   defp diff_entry(%{change: {:added, key, new}} = assigns) do
-    assigns = assign(assigns, key: key, values: values(new))
+    assigns =
+      assign(assigns,
+        key: key,
+        values: values(new),
+        scope_href: scope_href(assigns, key)
+      )
 
     ~H"""
     <li class="diff-line-added">
       <span aria-hidden="true">+</span><span class="sr-only"> added </span>
-      <span class="diff-field">{field_label(@key)}</span>
+      <.diff_label href={@scope_href} label={field_label(@key)} />
       <code :for={value <- @values}>{value}</code>
     </li>
     """
   end
 
   defp diff_entry(%{change: {:removed, key, old}} = assigns) do
-    assigns = assign(assigns, key: key, values: values(old))
+    assigns =
+      assign(assigns,
+        key: key,
+        values: values(old),
+        scope_href: scope_href(assigns, key)
+      )
 
     ~H"""
     <li class="diff-line-removed">
       <span aria-hidden="true">-</span><span class="sr-only"> removed </span>
-      <span class="diff-field">{field_label(@key)}</span>
+      <.diff_label href={@scope_href} label={field_label(@key)} />
       <code :for={value <- @values}>{value}</code>
     </li>
     """
   end
 
   defp diff_entry(%{change: {:changed, key, old, new}} = assigns) do
-    assigns = assign(assigns, key: key, olds: values(old), news: values(new))
+    assigns =
+      assign(assigns,
+        key: key,
+        olds: values(old),
+        news: values(new),
+        scope_href: scope_href(assigns, key)
+      )
 
     ~H"""
     <li class="diff-line-removed">
       <span aria-hidden="true">-</span><span class="sr-only"> removed </span>
-      <span class="diff-field">{field_label(@key)}</span>
+      <.diff_label href={@scope_href} label={field_label(@key)} />
       <code :for={value <- @olds} class="diff-old">{value}</code>
     </li>
     <li class="diff-line-added">
       <span aria-hidden="true">+</span><span class="sr-only"> added </span>
-      <span class="diff-field">{field_label(@key)}</span>
+      <.diff_label href={@scope_href} label={field_label(@key)} />
       <code :for={value <- @news} class="diff-new">{value}</code>
     </li>
     """
@@ -383,10 +433,12 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
 
     assigns =
       assign(assigns,
+        key: key,
         inner: inner,
         path: parent && "#{key}.#{parent}",
         added: Enum.map(added, &pretty/1),
-        removed: Enum.map(removed, &pretty/1)
+        removed: Enum.map(removed, &pretty/1),
+        scope_href: scope_href(assigns, key)
       )
 
     ~H"""
@@ -399,14 +451,25 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
            symmetric falls back to whole-element chips, which stay honest for reorderings
            and multi-element changes. --%>
       <ul :if={@inner != []} class="diff-list">
-        <.inner_field :for={field <- @inner} field={field} path={@path} />
+        <.inner_field
+          :for={field <- @inner}
+          field={field}
+          path={@path}
+          edge_id={@edge_id}
+          key_name={@key_name}
+          scope_key={@key}
+        />
       </ul>
       <ul :if={@inner == []} class="diff-list">
         <li :for={item <- @added} class="diff-line-added">
-          <span aria-hidden="true">+</span><span class="sr-only"> added </span><code>{item}</code>
+          <span aria-hidden="true">+</span><span class="sr-only"> added </span>
+          <.diff_label href={@scope_href} label={field_label(@key)} />
+          <code>{item}</code>
         </li>
         <li :for={item <- @removed} class="diff-line-removed">
-          <span aria-hidden="true">-</span><span class="sr-only"> removed </span><code>{item}</code>
+          <span aria-hidden="true">-</span><span class="sr-only"> removed </span>
+          <.diff_label href={@scope_href} label={field_label(@key)} />
+          <code>{item}</code>
         </li>
       </ul>
     </li>
@@ -436,45 +499,90 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
   defp inner_field_change(key, old, new), do: {:inner_changed, key, values(old), values(new)}
 
   defp inner_field(%{field: {:inner_added, key, values}} = assigns) do
-    assigns = assign(assigns, key: key, values: values)
+    assigns =
+      assign(assigns,
+        key: key,
+        values: values,
+        label: "#{assigns.path}.#{key}",
+        scope_href: scope_href(assigns, assigns.scope_key)
+      )
 
     ~H"""
     <li class="diff-line-added">
       <span aria-hidden="true">+</span><span class="sr-only"> added </span>
-      <span class="diff-field diff-path">{@path}.{@key}</span>
+      <.diff_label href={@scope_href} label={@label} klass="diff-field diff-path" />
       <code :for={value <- @values}>{value}</code>
     </li>
     """
   end
 
   defp inner_field(%{field: {:inner_removed, key, values}} = assigns) do
-    assigns = assign(assigns, key: key, values: values)
+    assigns =
+      assign(assigns,
+        key: key,
+        values: values,
+        label: "#{assigns.path}.#{key}",
+        scope_href: scope_href(assigns, assigns.scope_key)
+      )
 
     ~H"""
     <li class="diff-line-removed">
       <span aria-hidden="true">-</span><span class="sr-only"> removed </span>
-      <span class="diff-field diff-path">{@path}.{@key}</span>
+      <.diff_label href={@scope_href} label={@label} klass="diff-field diff-path" />
       <code :for={value <- @values}>{value}</code>
     </li>
     """
   end
 
   defp inner_field(%{field: {:inner_changed, key, old_values, new_values}} = assigns) do
-    assigns = assign(assigns, key: key, olds: old_values, news: new_values)
+    assigns =
+      assign(assigns,
+        key: key,
+        label: "#{assigns.path}.#{key}",
+        olds: old_values,
+        news: new_values,
+        scope_href: scope_href(assigns, assigns.scope_key)
+      )
 
     ~H"""
     <li class="diff-line-removed">
       <span aria-hidden="true">-</span><span class="sr-only"> removed </span>
-      <span class="diff-field diff-path">{@path}.{@key}</span>
+      <.diff_label href={@scope_href} label={@label} klass="diff-field diff-path" />
       <code :for={value <- @olds} class="diff-old">{value}</code>
     </li>
     <li class="diff-line-added">
       <span aria-hidden="true">+</span><span class="sr-only"> added </span>
-      <span class="diff-field diff-path">{@path}.{@key}</span>
+      <.diff_label href={@scope_href} label={@label} klass="diff-field diff-path" />
       <code :for={value <- @news} class="diff-new">{value}</code>
     </li>
     """
   end
+
+  # The field label doubles as the scoping link: with several changes in one release a
+  # reader can narrow the panel to that one field. It stays quiet (the label reads as data,
+  # not chrome); hover reveals the link, and the title says what clicking does. Without a
+  # scope href it renders as the plain label it always was.
+  attr :href, :string, default: nil
+  attr :label, :string, required: true
+  attr :klass, :string, default: "diff-field"
+
+  defp diff_label(%{href: nil} = assigns) do
+    ~H"""
+    <span class={@klass}>{@label}</span>
+    """
+  end
+
+  defp diff_label(assigns) do
+    ~H"""
+    <.link patch={@href} class={@klass} title={"Show only the changes to #{@label}"}>{@label}</.link>
+    """
+  end
+
+  # The scope target for one stored field key: the same page and version, plus ?change=.
+  defp scope_href(%{edge_id: id, key_name: key}, field) when is_binary(id) and is_binary(key),
+    do: ~p"/edges/#{id}?version=#{key}&change=#{field}"
+
+  defp scope_href(_assigns, _field), do: nil
 
   # "1 field changed from 1.16.0 to 1.11.2": one uninterrupted string, so the summary reads
   # as a sentence no matter how the template lays out around the interpolation.

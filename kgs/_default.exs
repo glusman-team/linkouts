@@ -25,6 +25,54 @@
     "subject_display" => {:default, "subject_name", {:field, "subject"}},
     "object_display" => {:default, "object_name", {:field, "object"}},
 
+    "subject_id" => {:link, "subject", "subject"},
+    "object_id" => {:link, "object", "object"},
+    "subject_mapping_kind" =>
+      {:if, [{:present, "subject_category"}], ", which is a {subject_kind}"},
+    "object_mapping_kind" =>
+      {:if, [{:present, "object_category"}], ", which is a {object_kind}"},
+    "subject_mapping" =>
+      {:if, [{:present, "subject"}],
+       {:names, "original_subject", "The original subject ",
+        " mapped to {subject_id}{subject_mapping_kind}"}},
+    "object_mapping" =>
+      {:if, [{:present, "object"}],
+       {:names, "original_object", "The original object ",
+        " mapped to {object_id}{object_mapping_kind}"}},
+
+    "node_mappings" => {:compound, ["{subject_mapping}", "{object_mapping}"]},
+    "mapping_disease_context_qualifier" =>
+      {:if, [{:present, "disease_context_qualifier"}],
+       {:names, "original_disease_context_qualifier", "The original disease context qualifier ",
+        " mapped to {disease_context_qualifier_id}"}},
+    "disease_context_qualifier_id" => {:link, "disease_context_qualifier", "disease_context_qualifier"},
+    "mapping_anatomical_context_qualifier" =>
+      {:if, [{:present, "anatomical_context_qualifier"}],
+       {:names, "original_anatomical_context_qualifier", "The original anatomical context qualifier ",
+        " mapped to {anatomical_context_qualifier_id}"}},
+    "anatomical_context_qualifier_id" => {:link, "anatomical_context_qualifier", "anatomical_context_qualifier"},
+    "mapping_frequency_qualifier" =>
+      {:if, [{:present, "frequency_qualifier"}],
+       {:names, "original_frequency_qualifier", "The original frequency qualifier ",
+        " mapped to {frequency_qualifier_id}"}},
+    "frequency_qualifier_id" => {:link, "frequency_qualifier", "frequency_qualifier"},
+    "mapping_population_context_qualifier" =>
+      {:if, [{:present, "population_context_qualifier"}],
+       {:names, "original_population_context_qualifier", "The original population context qualifier ",
+        " mapped to {population_context_qualifier_id}"}},
+    "population_context_qualifier_id" => {:link, "population_context_qualifier", "population_context_qualifier"},
+    "mapping_sex_qualifier" =>
+      {:if, [{:present, "sex_qualifier"}],
+       {:names, "original_sex_qualifier", "The original sex qualifier ",
+        " mapped to {sex_qualifier_id}"}},
+    "sex_qualifier_id" => {:link, "sex_qualifier", "sex_qualifier"},
+    "mapping_temporal_context_qualifier" =>
+      {:if, [{:present, "temporal_context_qualifier"}],
+       {:names, "original_temporal_context_qualifier", "The original temporal context qualifier ",
+        " mapped to {temporal_context_qualifier_id}"}},
+    "temporal_context_qualifier_id" => {:link, "temporal_context_qualifier", "temporal_context_qualifier"},
+    "qualifier_mappings" => {:compound, ["{mapping_disease_context_qualifier}", "{mapping_anatomical_context_qualifier}", "{mapping_frequency_qualifier}", "{mapping_population_context_qualifier}", "{mapping_sex_qualifier}", "{mapping_temporal_context_qualifier}"]},
+
     # The predicate reads as words ("biolink:treats" -> "treats"); a KG config overrides this
     # with per-predicate prose where the generic verb is not the claim a reader should see.
     "relation" => {:humanize, "predicate"},
@@ -189,7 +237,10 @@
 
   # The one sentence every KGX dump with sources supports; a KG config appends its own
   # sections (approval status, case counts) above it.
+  methods: "{provenance}",
   evidence: [
+    %{value: "{node_mappings}"},
+    %{value: "{qualifier_mappings}"},
     %{
       value: "This association is derived from {sources}.",
       if: [{:present, "sources"}]

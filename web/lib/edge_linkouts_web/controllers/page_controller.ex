@@ -9,7 +9,7 @@ defmodule EdgeLinkoutsWeb.PageController do
   @moduledoc """
   The root of the app is the bar of knowledge graphs this store holds: one row per graph, its
   releases as pills, each pill a random relationship from that release and the row's name a
-  random one from any of them.
+  random one from the graph's latest release.
 
   The page is one point read of the pool index — counts, no ids, about a kilobyte — so it costs
   roughly 1 RU cold and nothing warm, and it grows by a few bytes per release rather than by a
@@ -67,7 +67,6 @@ defmodule EdgeLinkoutsWeb.PageController do
   defp row({slug, versions}) do
     canonical = Display.kg_from_slug(slug)
     config = Display.get(canonical)
-    latest = config && config.latest_version
 
     releases =
       versions
@@ -76,13 +75,17 @@ defmodule EdgeLinkoutsWeb.PageController do
         %{
           label: label,
           edges: stats.edges,
-          sampled: stats.sampled,
-          latest?: is_binary(latest) and label == latest
+          sampled: stats.sampled
         }
       end)
       # Newest first, by the same numeric comparison the edge page orders its timeline with:
       # "1.16.0" before "1.11.2", not after it as a string sort would put it.
       |> Enum.sort(fn a, b -> Codec.compare_versions(a.label, b.label) == :gt end)
+
+    # The latest badge tags the newest stored release, computed from the versions the
+    # store actually holds rather than a number maintained by hand in kgs/*.exs.
+    newest = Codec.newest_label(Enum.map(releases, & &1.label))
+    releases = Enum.map(releases, &Map.put(&1, :latest?, &1.label == newest))
 
     %{
       slug: slug,
@@ -93,13 +96,10 @@ defmodule EdgeLinkoutsWeb.PageController do
       # The newest release's edge count, not a sum: releases of one graph re-assert largely the
       # same edges, so adding them would report a graph several times its real size.
       edges: edges_in(releases),
-      newest: newest_label(releases)
+      newest: newest
     }
   end
 
   defp edges_in([%{edges: edges} | _rest]), do: edges
   defp edges_in([]), do: 0
-
-  defp newest_label([%{label: label} | _rest]), do: label
-  defp newest_label([]), do: nil
 end

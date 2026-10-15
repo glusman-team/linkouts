@@ -3,7 +3,7 @@ defmodule EdgeLinkoutsWeb.RandomController do
 
   require Logger
 
-  alias EdgeLinkouts.Display
+  alias EdgeLinkouts.{Codec, Display}
   alias EdgeLinkoutsWeb.Edges
 
   @moduledoc """
@@ -15,8 +15,14 @@ defmodule EdgeLinkoutsWeb.RandomController do
   a query would be a full scan at full price (docs/adr/0001-wire-format.md):
 
   - `/<kg>/random?version=<label>` reads exactly one pool document and picks an id from it.
-  - `/<kg>/random` and `/random` read the pool index (counts, no ids), choose a release
-    weighted by how many edges it holds, then read that one release's pool.
+  - `/random`, `/<kg>/random` read the pool index (counts, no ids), choose a release weighted
+    by how many edges it holds, then read that one release's pool.
+
+  A pick without an explicit `?version=` means each graph's *latest* stored release, never an
+  older one: `/random` draws only the newest release of every graph in the store, and
+  `/<kg>/random` only the newest of that graph. An older release is reachable at random
+  solely through an explicit version selection — a pill on the home bar, a timeline step on
+  an edge page, or the header's random button while an older release is being read.
 
   Weighting by the true edge count is what keeps "a random edge" uniform over the store: a
   release holding twice the edges is twice as likely to be chosen, and a uniform pick inside
@@ -56,11 +62,13 @@ defmodule EdgeLinkoutsWeb.RandomController do
     end
   end
 
-  # Everything else — the whole store, or one graph's releases — goes through the index.
+  # Everything else — the whole store, or one graph's releases — goes through the index,
+  # reduced to each graph's latest stored release: a no-version pick never lands on an
+  # older release.
   defp pick(conn, slug, _version) do
     case Edges.fetch_pool_index() do
       {:ok, index} ->
-        case releases(index, slug) do
+        case index |> releases(slug) |> latest_only() do
           [] -> nothing_at_all(conn, slug)
           candidates -> weighted(conn, candidates, slug, @pick_attempts)
         end
@@ -152,6 +160,19 @@ defmodule EdgeLinkoutsWeb.RandomController do
       _other ->
         []
     end
+  end
+
+  # One candidate per graph: its newest stored release, by the same numeric comparison the
+  # home bar sorts its pills with. This is what makes every no-version random entry point
+  # mean "latest" — an older release survives here only as an explicit ?version= pick.
+  defp latest_only(candidates) do
+    candidates
+    |> Enum.group_by(fn {{slug, _label}, _release} -> slug end)
+    |> Enum.map(fn {_slug, group} ->
+      labels = for {{_slug, label}, _release} <- group, do: label
+      newest = Codec.newest_label(labels)
+      Enum.find(group, fn {{_slug, label}, _release} -> label == newest end)
+    end)
   end
 
   defp bounce(conn, ids, key, slug, label) do

@@ -67,6 +67,7 @@ every edge page is a 404.
 
 Then open `http://localhost:4000/`, which lists the graphs in the store with a pill per release.
 Each pill is a random relationship from that release (`/drugapprovals-kp/random?version=1.16.0`),
-the graph's name is a random one from any of its releases (`/drugapprovals-kp/random`), and
-`/random` picks from the whole store. A direct link to one edge still works:
+the graph's name is a random one from its latest release (`/drugapprovals-kp/random`), and
+`/random` picks from the latest release of every graph in the store. A direct link to one edge
+still works:
 `http://localhost:4000/edges/12ae7437-12dc-3c2a-b487-5297c09fc5e5`.

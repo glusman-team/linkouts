@@ -1,42 +1,48 @@
 defmodule EdgeLinkouts.Display.Value do
   @moduledoc """
-  The declarative value grammar that KG configs are written in.
+    The declarative value grammar that KG configs are written in.
 
-  A KG config never contains Elixir. It describes what to show, and this module interprets it
-  against a resolved edge document. The grammar is kept small on purpose. Every form exists because a legacy KGinfo/*.pl file needed it,
-  and each one added is another form a curator has to learn. The full list with examples is in
-  `docs/pages/config-reference.md`.
+    A KG config never contains Elixir. It describes what to show, and this module interprets it
+    against a resolved edge document. The grammar is kept small on purpose. Every form exists because a legacy KGinfo/*.pl file needed it,
+    and each one added is another form a curator has to learn. The full list with examples is in
+    `docs/pages/config-reference.md`.
 
-  Value forms:
+    Value forms:
 
-      "literal text with {slot} interpolation"   a template string
-      {:field, :name}                            one document field, as text
-      {:link, :name_field, :curie_field}         a CURIE linkout (label + href)
-      {:list, inner, separator}                  each element of a list field, joined
-      {:list, inner, separator, max, "and"}      capped, conjunct list ("A and B" / "A, B, and C")
-      {:pick, :field, %{value => spec, default: spec}}
-                                                 choose a spec by field value
-      {:url, "https://…{field}", label}          a link whose URL is built from fields
-      {:number, :field, :sig2 | :int}            a number formatted to 2 sig digits / integer
-      {:humanize, :field}                        "biolink:correlated_with" -> "correlated with"
-      {:count, :field}                           the length of a list
-      {:default, :field, fallback}               fallback when the field is absent or empty
-      {:or_query, name, original_name}           a Lucene OR group of every name a source
-                                                 used for the concept: the preferred name
-                                                 plus each pipe-delimited original, quoted
-      {:supporting, key, prefix, suffix, rewordings, fallback}
-                                                 text from a supporting_text "key: value"
-                                                 entry, framed as "prefix + value + suffix";
-                                                 rewordings swaps the value for a keyed
-                                                 replacement (keys downcased)
-      {:if, conditions, then_spec, else_spec}    conditional inclusion
+        "literal text with {slot} interpolation"   a template string
+        {:field, :name}                            one document field, as text
+        {:link, :name_field, :curie_field}         a CURIE linkout (label + href)
+        {:list, inner, separator}                  each element of a list field, joined
+        {:list, inner, separator, max, "and"}      capped, conjunct list ("A and B" / "A, B, and C")
+        {:pick, :field, %{value => spec, default: spec}}
+                                                   choose a spec by field value
+        {:url, "https://…{field}", label}          a link whose URL is built from fields
+        {:number, :field, :sig2 | :int}            a number formatted to 2 sig digits / integer
+        {:humanize, :field}                        "biolink:correlated_with" -> "correlated with"
+        {:count, :field}                           the length of a list
+        {:default, :field, fallback}               fallback when the field is absent or empty
+        {:names, field}                            pipe-delimited names as an Oxford-comma list
+        {:names, field, prefix, suffix}             framed names; empty input drops the frame
+        {:or_query, name, original_name}           a Lucene OR group of every name a source
+                                                   used for the concept: the preferred name
+                                                   plus each pipe-delimited original, quoted
+        {:supporting, key, prefix, suffix, rewordings, fallback}
+                                                   text from a supporting_text "key: value"
+                                                   entry, framed as "prefix + value + suffix";
+                                                   rewordings swaps the value for a keyed
+                                                   replacement (keys downcased)
+        {:if, conditions, then_spec, else_spec}    conditional inclusion
 
-  Conditions: `{:present, :field}`, `{:eq, :field, value}`, `{:matches, :field, "regex"}`,
-  `{:lt | :gt | :lte | :gte, :field, number}`, `{:version, ">1.0.0"}`, and `{:all | :any, [...]}`.
+    Conditions: `{:present, :field}`, `{:eq, :field, value}`, `{:matches, :field, "regex"}`,
+    `{:lt | :gt | :lte | :gte, :field, number}`, `{:version, ">1.0.0"}`, and `{:all | :any, [...]}`.
 
-  Missing values are the normal case in KGX, not an error: a field the release renamed, a node
-  the join could not resolve. Every form renders to nothing when its input is absent, so a
-  partially-populated edge produces a shorter sentence instead of a crash or the string "nil".
+    Missing values are the normal case in KGX, not an error: a field the release renamed, a node
+    the join could not resolve. Every form renders to nothing when its input is absent, so a
+    partially-populated edge produces a shorter sentence instead of a crash or the string "nil".
+      - `{:compound, clauses}` renders several sentence-shaped clauses as one compound
+      sentence: empty clauses drop, one clause stays a plain sentence, several join with
+      "; and " and close with a single period. Continuation clauses downcase a leading
+      capitalized word but never a CURIE prefix or acronym.
   """
 
   alias EdgeLinkouts.Display.{Segment, Version}
@@ -56,6 +62,9 @@ defmodule EdgeLinkouts.Display.Value do
           | {:count, atom() | String.t()}
           | {:default, atom() | String.t(), spec()}
           | {:or_query, atom() | String.t(), atom() | String.t()}
+          | {:names, atom() | String.t()}
+          | {:names, atom() | String.t(), spec(), spec()}
+          | {:compound, [spec()]}
           | {:supporting, String.t(), String.t(), String.t(),
              %{optional(String.t()) => String.t()}, spec()}
           | {:if, [condition()], spec(), spec() | nil}
@@ -240,6 +249,62 @@ defmodule EdgeLinkouts.Display.Value do
     end
   end
 
+  # Source names share the search query's pipe splitting and deduplication, but read as
+  # prose with the same Oxford-comma rule as source lists, without truncating originals.
+  # Blank counts as absent (the {:default} convention), so an emptied field falls back to
+  # the supporting_text log rather than printing nothing.
+  def render({:names, name}, ctx) do
+    values =
+      case fetch(ctx, name) do
+        nil -> original_entries(ctx.doc, to_string(name))
+        "" -> original_entries(ctx.doc, to_string(name))
+        [] -> original_entries(ctx.doc, to_string(name))
+        value -> [value]
+      end
+
+    values
+    |> query_terms()
+    |> Enum.map(&[Segment.text(&1)])
+    |> interleave_with(", ", "and", [])
+    |> Segment.join()
+  end
+
+  # {:compound, clauses}: one sentence out of sentence-shaped clauses, each already framed
+  # and self-dropping. Empty clauses vanish; one clause stays a plain sentence; several are
+  # joined with "; and " and closed with one period. Continuation clauses drop their capital
+  # so the join reads as prose, but only for word openers — a CURIE or acronym stays as-is.
+  def render({:compound, clauses}, ctx) do
+    clauses
+    |> Enum.map(&render(&1, ctx))
+    |> Enum.reject(&(&1 == []))
+    |> Enum.with_index()
+    |> Enum.map(fn
+      {clause, 0} ->
+        clause
+
+      {[{:text, <<first::utf8, second::utf8, rest::binary>>} | tail], _}
+      when first in ?A..?Z and second in ?a..?z ->
+        [{:text, String.downcase(<<first::utf8>>) <> <<second::utf8>> <> rest} | tail]
+
+      {clause, _} ->
+        clause
+    end)
+    |> case do
+      [] ->
+        []
+
+      clauses ->
+        Segment.join([Enum.intersperse(clauses, Segment.text("; and ")), Segment.text(".")])
+    end
+  end
+
+  def render({:names, name, prefix, suffix}, ctx) do
+    case render({:names, name}, ctx) do
+      [] -> []
+      names -> Segment.join([render(prefix, ctx), names, render(suffix, ctx)])
+    end
+  end
+
   # DailyMed's query box takes Lucene boolean syntax, so a search can reach every name the
   # source used for a concept: the preferred name plus each pipe-delimited original (the
   # same convention original_subject/original_object use), each a quoted phrase, joined with
@@ -294,7 +359,8 @@ defmodule EdgeLinkouts.Display.Value do
 
     Valid forms are a template string, {:field, name}, {:link, label_field, curie_field},
     {:list, name, inner, separator}, {:list, name, inner, separator, max}, {:list, name,
-    inner, separator, max, conjunction}, {:fold, label, inner}, {:strong, inner}, {:pick,
+    inner, separator, max, conjunction}, {:names, field}, {:names, field, prefix, suffix},
+    {:compound, clauses}, {:fold, label, inner}, {:strong, inner}, {:pick,
     name, branches}, {:local, name} and {:if, conditions, then, else}.
     `mix linkouts.check` reports this at build time rather than on a page view.
     """
@@ -384,6 +450,18 @@ defmodule EdgeLinkouts.Display.Value do
   defp supporting_entries(entries) when is_binary(entries), do: [entries]
   defp supporting_entries(entries) when is_list(entries), do: Enum.filter(entries, &is_binary/1)
   defp supporting_entries(_other), do: []
+
+  defp original_entries(doc, key) do
+    doc
+    |> Map.get("supporting_text")
+    |> supporting_entries()
+    |> Enum.flat_map(fn entry ->
+      case String.split(entry, ":", parts: 2) do
+        [^key, value] -> [value]
+        _ -> []
+      end
+    end)
+  end
 
   defp query_terms(fields) do
     fields

@@ -11,14 +11,15 @@ defmodule EdgeLinkoutsWeb.Layouts do
   Renders your app layout: the site header and the main landmark every page renders into.
 
   `kg_slug` scopes the header's "Random edge" button to one knowledge graph. A page that is
-  about a graph passes its slug and the button picks a random edge *from that graph*; with no
-  slug the button picks from the whole store. Reading a page about one KG and then landing on
-  an edge from another is the kind of surprise that makes a button untrustworthy.
+  about a graph passes its slug and the button picks a random edge *from that graph's latest
+  release*; with no slug the button picks from the latest release of every graph in the store.
+  Reading a page about one KG and then landing on an edge from another is the kind of surprise
+  that makes a button untrustworthy.
 
   `random_version` pins that pick further, to one release of the scoped graph. An edge page
   passes the release it is showing, so every random click stays inside the version the reader
   is reading until they switch versions or use the global randomizer. Without it the button
-  draws from every stored release of the graph.
+  draws from the graph's newest stored release, never an older one.
 
   ## Examples
 

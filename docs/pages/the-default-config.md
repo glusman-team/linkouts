@@ -45,12 +45,12 @@ From this plain KGX edge:
 }
 ```
 
-the relationship line reads:
+the headline states the relationship once. Methods describes its production:
 
-> TP53, a Gene, correlated with sarcoma, a Disease. This observation is machine generated. The
-> entire dataset underwent manual QC with some human validation.
+> This observation is machine generated. The entire dataset underwent manual QC with some
+> human validation.
 
-and the evidence paragraph:
+Provenance lists supporting evidence:
 
 > This association is derived from infores:any-kp.
 
@@ -133,8 +133,15 @@ gives (DrugApprovals does, for the agencies it cites).
 |---|---|
 | `title` | "{subject_display} and {object_display}" |
 | `edge` | "This relationship states that X treats Y" + context + qualifiers |
-| `relationship` | the claim with categories inline, then the provenance sentence |
-| `evidence` | "This association is derived from {sources}." when sources exist, nothing otherwise |
+| `methods` | the assertion-method prose from `{provenance}` |
+| `evidence` | original-name mappings when supplied, plus "This association is derived from {sources}." when sources exist |
+
+The page no longer repeats the headline as a relationship paragraph or diagram. Original
+subject and object names appear under Provenance as one compound sentence (`node_mappings`),
+and qualifier originals form their own compound sentence (`qualifier_mappings`), each mapped
+to its linked CURIE and Biolink class. Pipe-delimited names use an Oxford-comma list; absent
+originals omit the mapping, and absent categories omit only the class clause. Configured
+helper links appear under Tips. All section headings use the same style as About.
 
 ## Writing an override
 

@@ -209,6 +209,20 @@ defmodule EdgeLinkouts.Display do
   end
 
   @doc """
+  Renders the lead-in line naming who makes the claim, when the config declares one.
+
+  The edge page shows it as its own paragraph ending in a colon, above the sentence, so a
+  page reads "DrugApprovals KP asserts:" then the claim — not one sentence doing both.
+  A config without the key renders no lead-in.
+  """
+  @spec asserts(t(), map(), String.t()) :: [Segment.t()] | nil
+  def asserts(%Config{asserts: nil}, _doc, _version), do: nil
+
+  def asserts(%Config{} = config, doc, version) do
+    Value.render(config.asserts, context(config, doc, version))
+  end
+
+  @doc """
   Renders the text relationship line, when the config declares one.
 
   The line carries subject, relation, object and every qualifier with the identifiers
@@ -220,6 +234,14 @@ defmodule EdgeLinkouts.Display do
 
   def relationship(%Config{} = config, doc, version) do
     Value.render(config.relationship, context(config, doc, version))
+  end
+
+  @doc "Renders how the association was generated, separately from supporting evidence."
+  @spec methods(t() | nil, map(), String.t()) :: [Segment.t()]
+  def methods(nil, _doc, _version), do: []
+
+  def methods(%Config{} = config, doc, version) do
+    Value.render(config.methods, context(config, doc, version))
   end
 
   @doc "Renders the short label used for the page title and link previews."

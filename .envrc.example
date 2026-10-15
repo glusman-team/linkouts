@@ -9,7 +9,7 @@ source_up_if_exists
 
 # --- Cosmos layout (not secret)
 export COSMOS_DB=edge_linkouts
-export COSMOS_CONTAINER=edges
+export COSMOS_CONTAINER=edges_v2
 
 # --- RU budgets: the CLI gets 75% of the 1000 RU/s free tier (ingestion needs bursts),
 # --- the web app 15%, 10% stays headroom for the portal and retries

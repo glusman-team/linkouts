@@ -13,7 +13,6 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
   require Logger
 
   alias EdgeLinkouts.{Codec, Cosmos, Display}
-  alias EdgeLinkouts.Display.Config
   alias EdgeLinkoutsWeb.{Diff, EdgeComponents, Edges}
 
   @impl true
@@ -22,7 +21,7 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
     # until a document has been read; nil keeps it global for every state without one.
     # random_version pins it to the release being read, so random clicks stay in the version
     # the reader is on until they switch versions; nil means the graph's every release.
-    {:ok, assign(socket, kg_slug: nil, random_version: nil)}
+    {:ok, assign(socket, kg_slug: nil, random_version: nil, scope: nil)}
   end
 
   @impl true
@@ -86,15 +85,22 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
     if is_binary(requested) and requested not in versions do
       assign(socket,
         view: {:corrupt, "the blob does not store a version named #{inspect(requested)}"},
-        diff: nil
+        diff: nil,
+        scope: nil
       )
     else
       key = if is_binary(requested), do: requested, else: Codec.newest(blob)
-      render_version(socket, blob, versions, key)
+      render_version(socket, blob, versions, key, scope(params))
     end
   end
 
-  defp render_version(socket, blob, versions, key) do
+  # The diff scoping param (?change=publications): the raw stored field key, never the
+  # display label, so a link stays stable however the vocabulary moves. The panel itself
+  # falls back to the full diff when the key matches nothing in this release.
+  defp scope(%{"change" => field}) when is_binary(field) and field != "", do: field
+  defp scope(_params), do: nil
+
+  defp render_version(socket, blob, versions, key, scope) do
     case Codec.resolve(blob, key) do
       {:ok, doc} ->
         config = Display.for_key(key)
@@ -111,13 +117,14 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
           kg_slug: Display.slug(Codec.kg_name(key)),
           random_version: version_label(key),
           sentence: sentence(config, doc, key),
-          relationship: relationship(config, doc, key),
-          latest: latest?(config, key),
+          asserts: asserts(config, doc, key),
+          methods: Display.methods(config, doc, key),
           evidence: evidence(config, doc, key),
           footnote: footnote(config, doc, key),
           known_errors: known_errors(config, key),
           diff: diff(blob, prev_key, doc),
           prev_key: prev_key,
+          scope: scope,
           config: config,
           feedback_url:
             Display.feedback_url(config, socket.assigns.edge_id, socket.assigns.permalink),
@@ -132,20 +139,8 @@ defmodule EdgeLinkoutsWeb.EdgeLive do
   defp sentence(nil, _doc, _key), do: nil
   defp sentence(config, doc, key), do: Display.edge(config, doc, key)
 
-  defp relationship(nil, _doc, _key), do: nil
-
-  defp relationship(config, doc, key) do
-    case Display.relationship(config, doc, key) do
-      [] -> nil
-      segments -> segments
-    end
-  end
-
-  # The version pill and the timeline tag a stored version as "latest" when its release
-  # number is the one the config was written against; an untagged config tags nothing.
-  defp latest?(%Config{latest_version: nil}, _key), do: false
-  defp latest?(%Config{latest_version: latest}, key), do: version_label(key) == latest
-  defp latest?(nil, _key), do: false
+  defp asserts(nil, _doc, _key), do: nil
+  defp asserts(config, doc, key), do: Display.asserts(config, doc, key)
 
   defp evidence(nil, _doc, _key), do: []
   defp evidence(config, doc, key), do: Display.evidence(config, doc, key)

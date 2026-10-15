@@ -154,24 +154,36 @@ defmodule EdgeLinkouts.DisplayTest do
       assert text =~ "is contraindicated for patients with"
       assert text =~ contraindicated.doc["subject_name"]
       assert text =~ contraindicated.doc["object_name"]
-      assert String.starts_with?(text, "DrugApprovals KP asserts ")
+
+      # The sentence is the claim alone: the "DrugApprovals KP asserts:" lead-in lives in a
+      # separate spec rendered above it, so the source name no longer opens the sentence.
+      refute String.starts_with?(text, "DrugApprovals KP")
+      assert String.starts_with?(text, contraindicated.doc["subject_name"])
       assert String.ends_with?(text, ".")
     end
 
-    test "the source name opens the sentence as a link to its documentation", %{
-      resolved: resolved,
-      config: config
-    } do
+    test "the lead-in names the source as a link to its documentation, the sentence is the claim alone",
+         %{
+           resolved: resolved,
+           config: config
+         } do
       edge = Enum.find(resolved, &(&1.version == @v1))
-      segments = Display.edge(config, edge.doc, edge.version)
+      lead = Display.asserts(config, edge.doc, edge.version)
 
-      links = for {:link, href, label} <- segments, do: {label, href}
+      links = for {:link, href, label} <- lead, do: {label, href}
 
       assert {"DrugApprovals KP",
               "https://github.com/NCATSTranslator/Translator-All/wiki/Multiomics-Drug-Approvals-KP"} in links
 
-      # The plain-text read still opens with the name followed by the claim.
-      assert Segment.to_text(segments) =~ "DrugApprovals KP asserts "
+      # The lead-in is the source name and the verb — the page adds the colon and the line
+      # break; the sentence itself no longer carries the prefix.
+      assert Segment.to_text(lead) == "DrugApprovals KP asserts"
+
+      sentence_text =
+        config |> Display.edge(edge.doc, edge.version) |> Segment.to_text()
+
+      assert String.starts_with?(sentence_text, edge.doc["subject_name"])
+      refute sentence_text =~ "DrugApprovals KP asserts"
     end
 
     test "the subject and object become links to their identifiers", %{
@@ -367,12 +379,12 @@ defmodule EdgeLinkouts.DisplayTest do
       end
     end
 
-    test "an edge with no approvals or product labels says so instead of going quiet", %{
+    test "an edge with no approvals or product labels omits both sentences", %{
       resolved: resolved,
       config: config
     } do
-      # The legacy page printed its product-labels line even when empty ("None."); a reader must
-      # never wonder whether facts were dropped by the renderer.
+      # The legacy page printed its product-labels line even when empty ("None."); here a
+      # missing fact is simply absent, never announced.
       edge =
         Enum.find(resolved, fn %{doc: doc} ->
           not Map.has_key?(doc, "FDA_regulatory_approvals") and
@@ -383,10 +395,8 @@ defmodule EdgeLinkouts.DisplayTest do
       assert edge, "expected a fixture edge with neither approvals nor product labels"
 
       text = config |> Display.evidence(edge.doc, edge.version) |> Segment.to_text()
-      assert text =~ "No FDA application numbers are recorded for this association."
-
-      assert text =~
-               "No structured-product-label set identifiers are recorded for this association."
+      refute text =~ "No FDA application numbers are recorded"
+      refute text =~ "No structured-product-label set identifiers are recorded"
     end
 
     test "FDA application numbers link to the label browser", %{
@@ -413,20 +423,68 @@ defmodule EdgeLinkouts.DisplayTest do
       assert hrefs != []
     end
 
-    test "the relationship names the integrator, then its supporting sources", %{
+    test "provenance maps both originals with Oxford commas and omits missing facts", %{
+      config: config
+    } do
+      doc = %{
+        "original_subject" => "Zyrtec|Cetirizine|Allergy relief",
+        "subject" => "CHEBI:3561",
+        "subject_category" => ["biolink:ChemicalEntity"],
+        "original_object" => "Itching|Pruritus",
+        "object" => "HP:0000989",
+        "object_category" => ["biolink:PhenotypicFeature"]
+      }
+
+      text = config |> Display.evidence(doc, @v1) |> Segment.to_text()
+
+      assert text =~
+               "The original subject Zyrtec, Cetirizine, and Allergy relief mapped to CHEBI:3561, which is a ChemicalEntity; and the original object Itching and Pruritus mapped to HP:0000989, which is a PhenotypicFeature."
+
+      assert text =~
+               "the original object Itching and Pruritus mapped to HP:0000989, which is a PhenotypicFeature."
+
+      for missing <- [nil, "", " | ", []] do
+        partial = Map.put(doc, "original_subject", missing) |> Map.delete("object_category")
+        text = config |> Display.evidence(partial, @v1) |> Segment.to_text()
+        refute text =~ "original subject"
+        assert text =~ "The original object Itching and Pruritus mapped to HP:0000989."
+        refute text =~ "which is a"
+      end
+    end
+
+    test "qualifier originals form a separate compound sentence", %{config: config} do
+      doc = %{
+        "population_context_qualifier" => "NCIT:C27954",
+        "sex_qualifier" => "PATO:0000384",
+        "supporting_text" => [
+          "original_population_context_qualifier: adults|patients|people",
+          "original_sex_qualifier: male|men"
+        ]
+      }
+
+      text = config |> Display.evidence(doc, @v1) |> Segment.to_text()
+
+      assert text =~
+               "The original population context qualifier adults, patients, and people mapped to NCIT:C27954; and the original sex qualifier male and men mapped to PATO:0000384."
+
+      refute text =~ "original subject"
+      refute text =~ "original object"
+    end
+
+    test "methods name the integrator, then its supporting sources", %{
       resolved: resolved,
       config: config
     } do
       edge = Enum.find(resolved, &(&1.version == @v1))
 
-      text = config |> Display.relationship(edge.doc, edge.version) |> Segment.to_text()
+      text = config |> Display.methods(edge.doc, edge.version) |> Segment.to_text()
 
       # The primary source is the generator, so the closing sentence names it with its old
       # emphasis and registry link, then lists only the supporting sources (the primary
       # renders empty and the list drops it). Each source is named in words from the RIG's
       # supporting_data_source_info; a single supporting source takes no conjunction.
       assert text =~
-               "This association was generated by DrugApprovals KP, which integrated DailyMed in this assertion."
+               "This edge was generated by DrugApprovals KP, which integrated DailyMed in this assertion."
 
       refute text =~ "(primary)"
       refute text =~ "(supporting)"
@@ -434,7 +492,7 @@ defmodule EdgeLinkouts.DisplayTest do
       # The generator carries its old emphasis and linkout: bold, linking to its registry page.
       assert [{:strong, strong_inner}] =
                Enum.filter(
-                 Display.relationship(config, edge.doc, edge.version),
+                 Display.methods(config, edge.doc, edge.version),
                  &match?({:strong, _}, &1)
                )
 

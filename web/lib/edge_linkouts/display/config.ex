@@ -73,21 +73,19 @@ defmodule EdgeLinkouts.Display.Config do
             ],
             title: [type: :any, doc: "Short label for the page title and link previews."],
             edge: [type: :any, required: true, doc: "The sentence describing this relationship."],
+            asserts: [
+              type: :any,
+              doc: """
+              The lead-in line above the sentence naming who makes the claim (a value spec,
+              often just "{kp}"). Rendered as its own paragraph ending in a colon, so the
+              sentence itself reads as the claim alone.
+              """
+            ],
             relationship: [
               type: :any,
               doc: """
-              The text relationship line: subject, relation, object and every qualifier with
-              identifiers inline. When present it replaces the subject/predicate/object
-              diagram, which cannot scale to more than three slots.
-              """
-            ],
-            latest_version: [
-              type: :string,
-              doc: """
-              The release number this config was written against, e.g. "1.16.0". The page
-              tags that version as the latest in the header and on the timeline, so the
-              reader knows which stored version reflects the current knowledge graph without
-              diffing anything.
+              Legacy relationship-rendering API. Retained for callers of Display.relationship/3;
+              the edge page renders the claim once and does not display this spec.
               """
             ],
             known_errors: [
@@ -101,6 +99,7 @@ defmodule EdgeLinkouts.Display.Config do
               wrong, shown verbatim on a notice when any of those releases is displayed.
               """
             ],
+            methods: [type: :any, doc: "How the association was generated and its sources."],
             evidence: [
               type: {:list, :map},
               default: [],
@@ -140,9 +139,10 @@ defmodule EdgeLinkouts.Display.Config do
     :slots,
     :title,
     :edge,
+    :asserts,
     :relationship,
-    :latest_version,
     :known_errors,
+    :methods,
     :evidence,
     :footnote,
     :file
@@ -168,6 +168,8 @@ defmodule EdgeLinkouts.Display.Config do
          :ok <- validate_slots(validated[:slots], file),
          :ok <- validate_spec(validated[:edge], "edge", file),
          :ok <- validate_optional_spec(validated[:title], "title", file),
+         :ok <- validate_optional_spec(validated[:asserts], "asserts", file),
+         :ok <- validate_optional_spec(validated[:methods], "methods", file),
          :ok <- validate_optional_spec(validated[:relationship], "relationship", file),
          :ok <- validate_known_errors(validated[:known_errors] || [], file),
          :ok <- validate_evidence(validated[:evidence], file),
@@ -386,9 +388,10 @@ defmodule EdgeLinkouts.Display.Config do
     do: ["#{where}: {:number, field, :sig2 | :int} expected, got #{inspect(other)}"]
 
   def spec_problems({tag, name}, _where)
-      when tag in [:humanize, :count, :local] and (is_binary(name) or is_atom(name)), do: []
+      when tag in [:humanize, :count, :local, :names] and (is_binary(name) or is_atom(name)),
+      do: []
 
-  def spec_problems({tag, _} = other, where) when tag in [:humanize, :count, :local],
+  def spec_problems({tag, _} = other, where) when tag in [:humanize, :count, :local, :names],
     do: ["#{where}: {#{inspect(tag)}, field} expected, got #{inspect(other)}"]
 
   def spec_problems({:default, name, fallback}, where) when is_binary(name) or is_atom(name) do
@@ -397,6 +400,18 @@ defmodule EdgeLinkouts.Display.Config do
 
   def spec_problems({:default, _, _} = other, where),
     do: ["#{where}: {:default, field, fallback} expected, got #{inspect(other)}"]
+
+  def spec_problems({:compound, clauses}, where) when is_list(clauses),
+    do: Enum.flat_map(clauses, &spec_problems(&1, "#{where}.clause"))
+
+  def spec_problems({:compound, _}, where), do: ["#{where}: compound clauses must be a list"]
+
+  def spec_problems({:names, name, prefix, suffix}, where)
+      when is_binary(name) or is_atom(name),
+      do: spec_problems(prefix, "#{where}.prefix") ++ spec_problems(suffix, "#{where}.suffix")
+
+  def spec_problems({:names, _, _, _} = other, where),
+    do: ["#{where}: {:names, field, prefix, suffix} expected, got #{inspect(other)}"]
 
   def spec_problems({:or_query, name, original_name}, _where)
       when (is_binary(name) or is_atom(name)) and
@@ -608,6 +623,8 @@ defmodule EdgeLinkouts.Display.Config do
     referenced =
       referenced_slots(config.edge) ++
         referenced_slots(config.title) ++
+        referenced_slots(config.asserts) ++
+        referenced_slots(config.methods) ++
         referenced_slots(config.relationship) ++
         referenced_slots(config.footnote)
 
@@ -642,6 +659,11 @@ defmodule EdgeLinkouts.Display.Config do
   defp collect_spec_slots({:if, _conditions, then_spec, else_spec}) do
     collect_spec_slots(then_spec) ++ collect_spec_slots(else_spec)
   end
+
+  defp collect_spec_slots({:compound, clauses}), do: Enum.flat_map(clauses, &collect_spec_slots/1)
+
+  defp collect_spec_slots({:names, _name, prefix, suffix}),
+    do: collect_spec_slots(prefix) ++ collect_spec_slots(suffix)
 
   defp collect_spec_slots({:default, _name, fallback}), do: collect_spec_slots(fallback)
   # An OR query reads document fields only; it references no slots.

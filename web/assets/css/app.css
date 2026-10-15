@@ -169,6 +169,20 @@ code, kbd, pre {
   flex: none;
 }
 
+/* One line: the banner is a single declaration, and a centered wrap reads as two stray
+   fragments. The rail padding above leaves room for it wherever the rail itself fits;
+   under that width the text wraps again, balanced, rather than clipping off-screen. */
+.research-notice span {
+  white-space: nowrap;
+}
+
+@media (max-width: 72rem) {
+  .research-notice span {
+    white-space: normal;
+    text-wrap: balance;
+  }
+}
+
 .research-notice strong {
   font-weight: 700;
 }
@@ -416,6 +430,15 @@ code, kbd, pre {
   margin-bottom: 0.75rem;
 }
 
+/* The "DrugApprovals KP asserts:" lead-in above the sentence: body text, not a heading,
+   with a colon the template adds after the rendered segments. One step above body scale so
+   it hands off to the sentence, and clearly under it. */
+.edge-asserts {
+  font-size: 1.15rem;
+  line-height: 1.4;
+  margin-bottom: 0.35rem;
+}
+
 .edge-sentence {
   font-size: clamp(1.35rem, 1.05rem + 1.6vw, 1.9rem);
   font-weight: 600;
@@ -640,13 +663,11 @@ code, kbd, pre {
   font-family: var(--font-mono);
 }
 
-/* Diff */
-.diff-panel {
-  margin-top: 1rem;
-}
-
+/* Diff body sits at the section scale, like Methods and Known issues: 1rem/1.7, the
+   size the rest of the page reads at. */
 .diff-summary {
-  font-size: 0.88rem;
+  font-size: 1rem;
+  line-height: 1.7;
   margin-bottom: 0.6rem;
 }
 
@@ -676,29 +697,52 @@ code, kbd, pre {
   align-items: baseline;
   gap: 0.45rem;
   flex-wrap: wrap;
-  font-size: 0.85rem;
+  font-size: 1rem;
+  line-height: 1.7;
 }
 
 .diff-field {
   font-weight: 600;
 }
 
+/* The field label is also the scoping link (see diff_label): quiet until hovered, so it
+   reads as data first and reveals the affordance only to a reader looking for it. */
+a.diff-field {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.diff-field:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The scope's way back out, beside the summary it explains. */
+.diff-scope-clear {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+.diff-scope-clear:hover {
+  text-decoration-thickness: 2px;
+}
+
 .diff-group code, .diff-list code {
   background: var(--color-base-200);
   border-radius: var(--radius-field);
   padding: 0.05rem 0.4rem;
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   overflow-wrap: anywhere;
 }
 
+/* Old values keep the strike-through with the error hue on the line itself, not a tinted
+   chip: the pair reads as two whole page-text lines, one struck. */
 .diff-old {
   text-decoration: line-through;
   text-decoration-color: var(--color-error);
-  background: color-mix(in oklab, var(--color-error) 10%, var(--color-base-100)) !important;
-}
-
-.diff-new {
-  background: color-mix(in oklab, var(--color-success) 10%, var(--color-base-100)) !important;
 }
 
 .diff-path {
@@ -712,69 +756,36 @@ code, kbd, pre {
   margin-top: 0.2rem;
 }
 
-/* Colour is never the only signal: every diff line also carries a +/- marker in the
-   markup and a visually-hidden word (added/removed) for screen readers. The tints are
-   light backdrops so a changed pair reads as two whole lines, not red and green text
-   floating on the page. */
-.diff-line-added {
+/* Understated like the sections around it: the diff carries no tinted slabs, and the +/-
+   markers alone carry the colour, so the changes never out-shout the claim. Colour still
+   never carries meaning alone: every line keeps its marker and a visually-hidden word
+   (added/removed) for screen readers. */
+.diff-line-added > span[aria-hidden="true"] {
   color: var(--color-success);
-  background: color-mix(in oklab, var(--color-success) 7%, transparent);
+  font-weight: 600;
 }
 
-.diff-line-removed {
+.diff-line-removed > span[aria-hidden="true"] {
   color: var(--color-error);
-  background: color-mix(in oklab, var(--color-error) 6%, transparent);
-}
-
-.diff-line-added,
-.diff-line-removed {
-  padding: 0.15rem 0.5rem;
-  border-radius: var(--radius-field);
+  font-weight: 600;
 }
 
 .diff-line-changed {
   color: var(--color-base-content);
 }
 
-/* Evidence: prose sentences, the way the legacy page ran it — facts as sentences with links
-   inline, no labels for a reader to decode. Same size as the claim line so the two paragraphs
-   read as one argument, with the colour a step softer. */
-.edge-evidence {
+/* Methods, provenance, and tips share one body scale and the existing section heading. */
+.edge-prose p {
   margin: 0;
   font-size: 1rem;
   line-height: 1.7;
   color: color-mix(in oklab, var(--color-base-content) 80%, var(--color-base-100));
 }
 
-/* Footnote: helper text the reader acts on ("On DailyMed, search ...") rather than a fact
-   about the edge. Same measure as the evidence paragraph, a step softer, so it reads as a
-   pointer beneath the argument instead of part of it. */
-.edge-footnote {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.7;
-  color: color-mix(in oklab, var(--color-base-content) 65%, var(--color-base-100));
-}
-
-/* A release the config flags with a known error: a boxed note above the claim, on-theme but
-   with a warning-tinted accent, so a reader clocks that this stored version is suspect
-   without the page shouting. The text stays full-contrast base content; the icon is an
-   inline glyph aligned to the text baseline like the heroicons docs recommend. */
-.edge-known-error {
-  margin: 0;
-  padding: 0.6rem 0.9rem;
-  font-size: 0.95rem;
-  line-height: 1.6;
-  color: var(--color-base-content);
-  background: var(--color-base-200);
-  border: 1px solid var(--color-base-300);
-  border-left: 3px solid var(--color-warning);
-  border-radius: var(--radius-box);
-}
-
-/* Stacked notices (a release with more than one defect) keep one blank line between
-   them, like consecutive paragraphs. */
-.edge-known-error + .edge-known-error {
+/* A release the config flags with a known error: one plain prose section like Methods or
+   Tips, in the curator's own words. Only the stacked-paragraph spacing is bespoke; the
+   body text comes from .edge-prose. */
+.edge-issues p + p {
   margin-top: 0.75rem;
 }
 
@@ -832,7 +843,7 @@ a.chip:hover {
 
 /* About block */
 .edge-about p {
-  font-size: 0.9rem;
+  font-size: 1rem;
   line-height: 1.7;
   color: color-mix(in oklab, var(--color-base-content) 82%, var(--color-base-100));
   margin-bottom: 0.6rem;

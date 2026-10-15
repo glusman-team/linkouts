@@ -8,6 +8,84 @@ defmodule EdgeLinkouts.Display.ValueTest do
     {:number, "n", format} |> Value.render(ctx) |> Segment.to_text()
   end
 
+  describe "{:names, field}" do
+    test "pipe-delimited originals use Oxford commas and omit blanks and duplicates" do
+      for {value, expected} <- [
+            {"Zyrtec", "Zyrtec"},
+            {"A|B", "A and B"},
+            {" A | B | C | A || ", "A, B, and C"},
+            {["A|B", "C"], "A, B, and C"},
+            {nil, ""},
+            {" | ", ""}
+          ] do
+        ctx = %{doc: %{"original" => value}, version: "kg-1.0.0", slots: %{}, aliases: %{}}
+        assert Value.render({:names, "original"}, ctx) |> Segment.to_text() == expected
+
+        framed = Value.render({:names, "original", "Original: ", "."}, ctx) |> Segment.to_text()
+        assert framed == if(expected == "", do: "", else: "Original: #{expected}.")
+      end
+    end
+  end
+
+  describe "compound mappings" do
+    test "empty clauses drop, one stays a sentence, and two become a compound sentence" do
+      ctx = %{doc: %{}, version: "kg-1.0.0", slots: %{}, aliases: %{}}
+
+      for {clauses, expected} <- [
+            {[], ""},
+            {[nil, "The subject mapped to X:1"], "The subject mapped to X:1."},
+            {["The subject mapped to X:1", "The object mapped to Y:2"],
+             "The subject mapped to X:1; and the object mapped to Y:2."}
+          ] do
+        assert Value.render({:compound, clauses}, ctx) |> Segment.to_text() == expected
+      end
+    end
+
+    test "continuation clauses downcase word openers but never CURIE prefixes" do
+      ctx = %{
+        doc: %{"x" => "MESH:D001"},
+        version: "kg-1.0.0",
+        slots: %{"x" => {:link, "x", "x"}},
+        aliases: %{}
+      }
+
+      text =
+        Value.render({:compound, ["The subject mapped to X:1", "Gene family {x} involved"]}, ctx)
+        |> Segment.to_text()
+
+      assert text == "The subject mapped to X:1; and gene family MESH:D001 involved."
+    end
+
+    test "a blank field falls back to the supporting_text log" do
+      for blank <- ["", []] do
+        ctx = %{
+          doc: %{
+            "original_subject" => blank,
+            "supporting_text" => ["original_subject: Zyrtec|Cetirizine"]
+          },
+          version: "kg-1.0.0",
+          slots: %{},
+          aliases: %{}
+        }
+
+        assert Value.render({:names, "original_subject"}, ctx) |> Segment.to_text() ==
+                 "Zyrtec and Cetirizine"
+      end
+    end
+
+    test "qualifier originals also resolve pipe-delimited supporting-text entries" do
+      ctx = %{
+        doc: %{"supporting_text" => ["original_sex_qualifier: male|men"]},
+        version: "kg-1.0.0",
+        slots: %{},
+        aliases: %{}
+      }
+
+      assert Value.render({:names, "original_sex_qualifier"}, ctx) |> Segment.to_text() ==
+               "male and men"
+    end
+  end
+
   describe "{:number, field, :sig2}" do
     test "p-value magnitudes use unpadded scientific notation" do
       # Erlang's own output is "1.2e-09"; a reader expects "1.2e-9".

@@ -47,9 +47,10 @@ What happens:
    each other's versions.
 5. A reservoir sample of this release's ids is written to its own reserved document,
    `__random_pool__:drugapprovals-kp:1.16.0`, and one entry is added to the reserved
-   `__random_pool__` index. `/random` picks a release in proportion to its edge count and then
-   picks inside that release's sample; `/<slug>/random?version=<label>` reads one pool and picks
-   from it. Neither issues a query, which the container could not answer cheaply.
+   `__random_pool__` index. `/random` draws each graph's newest release, in proportion to its
+   edge count, and then picks inside that release's sample; `/<slug>/random?version=<label>`
+   reads one pool and picks from it. Neither issues a query, which the container could not
+   answer cheaply.
 
 Writes are paced to the RU budget (`--ru-budget`, default 750 RU/s) using the actual charge Cosmos
 reports, so a load shares the free tier with the running web app instead of starving it.

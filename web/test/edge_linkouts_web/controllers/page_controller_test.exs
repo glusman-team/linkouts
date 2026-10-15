@@ -4,7 +4,6 @@ defmodule EdgeLinkoutsWeb.PageControllerTest do
   import EdgeLinkouts.Cosmos.Fake, only: [reset: 0]
 
   alias EdgeLinkouts.Cosmos
-  alias EdgeLinkouts.Display
   alias EdgeLinkoutsWeb.Fixtures
 
   @slug "drugapprovals-kp"
@@ -24,7 +23,12 @@ defmodule EdgeLinkoutsWeb.PageControllerTest do
       # nothing on this page is stored, it is all derived from the index's counts.
       assert html =~ "DrugApprovals KP"
       assert html =~ "infores:drugapprovals-kp"
-      assert html =~ ~p"/#{@slug}/random"
+
+      # The graph's name opens a random edge from its latest release: its link carries the
+      # newest version explicitly, the same target as the newest release's pill.
+      assert html =~
+               ~r/<a[^>]*class="kg-name"[^>]*href="\/#{@slug}\/random\?version=1\.16\.0"/
+
       assert html =~ ~p"/#{@slug}/random?version=1.16.0"
       assert html =~ ~p"/#{@slug}/random?version=1.11.2"
     end
@@ -39,25 +43,28 @@ defmodule EdgeLinkoutsWeb.PageControllerTest do
       assert html =~ ~r/version=1\.16\.0.*version=1\.11\.2/s
     end
 
-    test "the config's latest_version tags one release", %{conn: conn} do
+    test "the newest stored release carries the latest badge", %{conn: conn} do
       Cosmos.Fake.seed(Fixtures.docs())
 
       html = conn |> get(~p"/") |> html_response(200)
 
-      # The badge only tags a release the store actually holds. The config's latest_version is
-      # 1.23.5 and these fixtures stop at 1.16.0, so nothing is tagged yet; the badge path is
-      # exercised again as soon as that release is loaded. The bar itself must still render.
-      latest = Display.get("infores:drugapprovals-kp").latest_version
-      assert latest == "1.23.5"
-      refute html =~ "latest-badge"
+      # The badge tags the newest release the store actually holds, computed from the stored
+      # versions rather than a number maintained by hand in kgs/*.exs. The fixtures stop at
+      # 1.16.0, so that release is tagged and the older 1.11.2 is not.
+      assert html =~
+               ~r/version-pill[^>]*>\s*1\.16\.0\s*<\/a>\s*<span[^>]*class="latest-badge"/s
+
+      refute html =~
+               ~r/version-pill[^>]*>\s*1\.11\.2\s*<\/a>\s*<span[^>]*class="latest-badge"/s
+
       assert html =~ "version-pill-group"
       refute html =~ "version-pill version-pill-latest"
     end
 
     test "the counts line stays bare; the pill row carries the latest badge", %{conn: conn} do
-      # The fixture index stops at 1.16.0 while the config's latest_version is 1.23.5;
-      # re-seed it with that release present so the newest stored release IS the latest.
-      # The home page reads releases from the pool index, so no edge document is needed.
+      # The badge is computed, not configured: seeding 1.23.5 alongside the fixture releases
+      # makes it the newest stored release, so it is the one tagged. The home page reads
+      # releases from the pool index, so no edge document is needed.
       Cosmos.Fake.seed(Fixtures.docs())
 
       Cosmos.Fake.seed_pool_index(%{

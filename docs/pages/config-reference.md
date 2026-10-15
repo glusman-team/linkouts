@@ -14,11 +14,27 @@ A config is a map with these keys:
 | `slots` | | named value specs a template can reference as `{name}` |
 | `title` | | short label for the page title; defaults to "subject and object" |
 | `edge` | yes | the sentence describing the relationship |
-| `relationship` | | the text relationship line, identifiers and exact biolink terms inline; replaces the diagram when present |
-| `latest_version` | | release number this config was written against ("1.16.0"); the page tags it "latest" |
-| `evidence` | | sentences for the evidence paragraph: `%{value: spec, if: [conditions]}`. Every sentence that passes its conditions renders into one prose paragraph on the edge page |
+| `asserts` | | the lead-in line above the sentence naming who makes the claim (often `"{kp}"`); the page ends it with a colon and renders the sentence below it |
+| `relationship` | | legacy rendering API; the edge page no longer repeats this sentence |
+| `methods` | | value spec rendered under Methods, describing how the association was generated and its sources |
+| `evidence` | | sentences under Provenance: `%{value: spec, if: [conditions]}`. Matching, nonempty sentences form one paragraph, including original-name mappings |
+| `footnote` | | helper links rendered under Tips, using the same heading and body sizes as the other sections |
+
+The edge page presents the claim once, followed by Methods, Provenance, and Tips. Empty
+sections are omitted. These headings use the same section style as About.
 
 ## Value specs
+
+### Original names
+
+`{:names, "original_subject"}` splits pipe-delimited names (or lists of names), trims blanks,
+and removes case-insensitive duplicates, preserving the first spelling. It renders `A`,
+`A and B`, or `A, B, and C`. All names remain visible.
+
+`{:names, "original_subject", "The original subject ", " mapped to {subject_id}."}`
+adds a template prefix and suffix only when at least one name survives. Missing or blank
+originals produce no sentence. CURIEs and Biolink classes use the existing link specs.
+
 
 Anywhere a value is expected you may write any of these forms.
 
@@ -109,6 +125,19 @@ renders when `inner` renders nothing.
 ### `{:strong, inner}`
 
 `inner` in bold.
+
+### `{:names, field}` and `{:names, field, prefix, suffix}`
+
+Pipe-delimited original names (a document field, or `"key: a|b"` entries in
+`supporting_text`) as an Oxford-comma list: `A`, `A and B`, `A, B, and C`. Blank counts as
+absent. With a prefix and suffix the framed sentence renders only when at least one name
+survives.
+
+### `{:compound, clauses}`
+
+Several sentence-shaped clauses as one compound sentence. Empty clauses drop; one clause
+stays a plain sentence; several join with `"; and "` and close with a single period.
+Continuation clauses downcase a leading capitalized word, never a CURIE prefix or acronym.
 
 ### `{:supporting, key, prefix, suffix, rewordings, fallback}`
 

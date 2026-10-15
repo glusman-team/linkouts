@@ -52,16 +52,34 @@ defmodule EdgeLinkoutsWeb.RandomControllerTest do
       assert edge_id_from(location) in all_fixture_edge_ids()
     end
 
-    test "the redirect carries the release the id was sampled from", %{conn: conn} do
+    test "a no-version pick draws only the newest release of each graph", %{conn: conn} do
       Cosmos.Fake.seed(Fixtures.docs())
 
       location = conn |> get(~p"/random") |> location()
       id = edge_id_from(location)
 
-      # Opening the sampled release rather than the blob's newest is what makes the page agree
-      # with the pick: a reader who asks for a random 1.11.2 edge must not land on 1.16.0.
-      assert location == ~p"/edges/#{id}?version=#{Fixtures.v1()}" or
-               location == ~p"/edges/#{id}?version=#{Fixtures.v2()}"
+      # The redirect carries the sampled release, and with no explicit version that can only
+      # be a graph's newest release: the fixtures also hold an older 1.11.2 pool, which must
+      # never be drawn.
+      assert location == ~p"/edges/#{id}?version=#{Fixtures.v2()}"
+      assert id in Fixtures.pool_ids("1.16.0")
+    end
+
+    test "an older release is never drawn no matter how much bigger it is" do
+      # The old weighting favoured a release by edge count across every stored release; the
+      # latest-only rule must ignore the older release entirely, so a 1000:1 weight in its
+      # favour changes nothing.
+      Cosmos.Fake.seed(Fixtures.docs())
+      Cosmos.Fake.seed_pool(["old-1"], @slug, "0.0.1")
+
+      Cosmos.Fake.seed_pool_index(%{
+        @slug => %{"0.0.1" => 1000, "1.11.2" => 6, "1.16.0" => 6}
+      })
+
+      for _ <- 1..25 do
+        id = build_conn() |> get(~p"/random") |> location() |> edge_id_from()
+        assert id in Fixtures.pool_ids("1.16.0")
+      end
     end
 
     test "renders an empty-state page when there is no index, rather than looping to /", %{
@@ -122,13 +140,13 @@ defmodule EdgeLinkoutsWeb.RandomControllerTest do
   end
 
   describe "/:kg/random" do
-    test "stays inside the named graph" do
+    test "draws from the graph's newest release only" do
       seed_two_kgs()
-      allowed = Fixtures.pool_ids("1.11.2") ++ Fixtures.pool_ids("1.16.0")
+      allowed = Fixtures.pool_ids("1.16.0")
 
       for _ <- 1..25 do
         id = build_conn() |> get(~p"/#{@slug}/random") |> location() |> edge_id_from()
-        assert id in allowed, "#{id} is not an edge of #{@slug}"
+        assert id in allowed, "#{id} is not an edge of #{@slug} 1.16.0"
         refute id == @other_id
       end
     end

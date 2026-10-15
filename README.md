@@ -5,7 +5,7 @@ shows what the edge asserts, the evidence behind it, where it came from, and how
 changed across KG releases.
 
 Live: https://linkouts.skyelanegoetz.com (currently serving `infores:drugapprovals-kp`
-releases 1.23.3 and 1.23.4).
+releases 1.23.3 through 1.24.1).
 
 - **`cli/`**: `linkouts`, a Go CLI. It reads KGX `nodes.ndjson` and `edges.ndjson`,
   joins node names and categories onto edges using an embedded ClickHouse engine (chDB),
@@ -14,7 +14,8 @@ releases 1.23.3 and 1.23.4).
 - **`web/`**: a minimal Phoenix LiveView app. `/` lists every graph in the store with a pill
   per release, `/edges/:uuid` renders one edge with a per-KG-version toggle and a diff view,
   and `/random`, `/<kg>/random` and `/<kg>/random?version=<label>` pick a random relationship
-  from the whole store, one graph, or one release.
+  from the latest releases of every graph, one graph's latest release, or one explicit
+  release.
 - **`kgs/`**: declarative `.exs` display configs. Adding a KG means adding a data
   file, not writing code.
 - **`docs/`**: ExDoc guides plus the generated CLI reference.
