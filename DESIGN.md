@@ -19,13 +19,13 @@ colors:
 typography:
   display:
     fontFamily: '"Atkinson Hyperlegible Next", system-ui, "Segoe UI", sans-serif'
-    fontSize: "clamp(1.35rem, 1.05rem + 1.6vw, 1.9rem)"
+    fontSize: "clamp(1.44rem, 1.296rem + 0.64vw, 1.728rem)"
     fontWeight: 600
     lineHeight: 1.4
     letterSpacing: "-0.01em"
   title:
     fontFamily: '"Atkinson Hyperlegible Next", system-ui, "Segoe UI", sans-serif'
-    fontSize: "1.6rem"
+    fontSize: "1.44rem"
     fontWeight: 700
     letterSpacing: "-0.015em"
   body:
@@ -34,39 +34,39 @@ typography:
     lineHeight: 1.7
   name:
     fontFamily: '"Atkinson Hyperlegible Next", system-ui, "Segoe UI", sans-serif'
-    fontSize: "1.05rem"
+    fontSize: "1.2rem"
     fontWeight: 650
   small:
     fontFamily: '"Atkinson Hyperlegible Next", system-ui, "Segoe UI", sans-serif'
-    fontSize: "0.85rem"
-    lineHeight: 1.6
+    fontSize: "calc(1rem / 1.2)"
+    lineHeight: 1.5
   node-name:
     fontFamily: '"Atkinson Hyperlegible Next", system-ui, "Segoe UI", sans-serif'
-    fontSize: "1.1rem"
+    fontSize: "1.2rem"
     fontWeight: 700
     lineHeight: 1.3
   note:
     fontFamily: '"Atkinson Hyperlegible Next", system-ui, "Segoe UI", sans-serif'
-    fontSize: "0.95rem"
-    lineHeight: 1.6
+    fontSize: "1rem"
+    lineHeight: 1.7
   caption:
     fontFamily: '"Atkinson Hyperlegible Next", system-ui, "Segoe UI", sans-serif'
-    fontSize: "0.9rem"
+    fontSize: "1rem"
     lineHeight: 1.7
   label:
     fontFamily: '"Atkinson Hyperlegible Next", system-ui, "Segoe UI", sans-serif'
-    fontSize: "0.78rem"
+    fontSize: "calc(1rem / 1.2)"
     fontWeight: 700
     letterSpacing: "0.08em"
   mono:
     fontFamily: 'ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", monospace'
-    fontSize: "0.78rem"
+    fontSize: "calc(1rem / 1.2)"
   identifier:
     fontFamily: 'ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", monospace'
-    fontSize: "0.74rem"
+    fontSize: "calc(1rem / 1.2)"
   micro:
     fontFamily: 'ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", monospace'
-    fontSize: "0.7rem"
+    fontSize: "calc(1rem / 1.2)"
     lineHeight: 1.4
 rounded:
   field: "0.375rem"
@@ -192,19 +192,27 @@ The palette is a cool, near-achromatic paper family with a single deep-teal acce
 **Character:** A typeface chosen for evidence work: Atkinson Hyperlegible Next was designed for character differentiation, which matters when the payload is identifiers like `infores:drugapprovals-kp` where look-alikes (`1/l/I`, `0/O`) change meaning. The voice is plain, confident, and slightly narrow-tracked at headlines — a lab record, not a brochure.
 
 ### Hierarchy
-- **Display** (600, clamp(1.35rem, 1.05rem + 1.6vw, 1.9rem), line-height 1.4, -0.01em tracking): the edge sentence — the single claim a page exists for. The largest text on any page and the only display-scale element.
-- **Title** (700, 1.6rem, -0.015em tracking): page titles on the KG bar and state pages.
-- **Section** (700, 0.78rem, 0.08em tracking, uppercase): the anchored kicker for edge-page sections (Stored versions, Changes, About) — softened ink, closed on the right by a 1px hairline rule, speaking the same label language as node roles and diff group headings.
-- **Body** (400, 1rem, line-height 1.7): the evidence sentences, relation lines, and footnotes. Facts read as sentences at this size, softer steps (`color-mix` 80%, then 65% of ink) distinguish evidence from claim from helper text.
-- **Small** (400, 0.85rem): metadata, kickers, header controls, footer.
-- **Caption** (400, 0.9rem, line-height 1.7): the About-block prose and boxed notices — a hair below body, softened ink.
-- **Name** (650-700, 1.05rem): KG names on the root page and the header brand wordmark.
-- **Label** (700, 0.78rem, 0.08em tracking, uppercase): node-role labels, diff group headings, state kickers.
-- **Mono** (0.78rem, on a recessed chip with a hairline border): identifiers, versions, counts, predicates. Version numbers everywhere are mono; counts ride in mono badges.
+- **Display** (600, fluid 1.44-1.728rem, line-height 1.4, -0.01em tracking): the edge claim, the largest text on the page. Interpolates between scale steps from 22.5rem to 67.5rem viewport widths.
+- **Title** (700, 1.44rem, line-height 1.4, -0.015em tracking): KG bar and state-page titles.
+- **Lead** (1.2rem, line-height 1.4): the source's "asserts" line, below the claim and above body. KG and node names use the same step with their own weight.
+- **Body** (400, 1rem, line-height 1.7): Methods, Provenance, About, Tips, Feedback, Known issues, and Changes. The header wordmark also uses body size, with weight rather than another size for emphasis.
+- **Small** (1rem / 1.2, about 0.8333rem): section kickers, metadata, controls, IDs, versions, diff paths and values, count/latest badges, and footer. Mono roles keep their mono face; semantic colors and weights retain their meanings. UI line-height is 1.5, and prose remains 1.7.
+- **Label** (700, small step, 0.08em tracking, uppercase): section and node-role labels, diff group headings, state kickers. The existing trailing section hairline is unchanged.
 
 ### Scale
-The complete size ramp in use, smallest to largest. Steps between body and label are micro-steps for chips and metadata, not new roles:
-0.7rem (micro badges: latest, counts) · 0.74rem (identifier chips) · 0.75rem (version pills, copy buttons, canonical ids) · 0.78rem (labels, section kickers, mono code) · 0.8rem (id lines, footer) · 0.82rem (timeline steps) · 0.85rem (small controls, diff lines) · 0.88rem (diff summary) · 0.9rem (caption: about prose, notices) · 0.95rem (boxed notes) · 1rem (body) · 1.05rem (KG names, brand) · 1.1rem (edge-node names) · 1.6rem (page titles) · clamp(1.35rem, 1.05rem + 1.6vw, 1.9rem) (edge sentence).
+A minor-third scale with a 1.2 ratio and a 1rem base. At the browser's default 16px, the five role sizes are:
+
+| Token | rem | px | Role |
+| --- | --- | --- | --- |
+| `--type-small` | `calc(1rem / 1.2)` | 13.33 | Metadata, labels, controls, mono |
+| `--type-body` | `1rem` | 16 | Reading text |
+| `--type-lead` | `1.2rem` | 19.2 | Source lead and names |
+| `--type-title` | `1.44rem` | 23.04 | Page titles, mobile claim floor |
+| `--type-claim` | `1.728rem` | 27.65 | Desktop claim ceiling |
+
+Do not use the next downward step (0.694rem) for content: identifiers and counts need to remain readable. Use weight, tracking, and ink level for secondary hierarchy instead of more nearly identical font sizes. Keep rem units so user text-size preferences work; the header wraps and long IDs break rather than overflowing when text is enlarged.
+
+The scale is a consistency tool, not a guarantee of visual quality. Review actual long labels at 320px and with 200% text sizing in both themes. [Modular Scale](https://www.modularscale.com/) explains the ratio method and explicitly permits breaking the scale for legibility.
 
 ### Named Rules
 **The Sentence Rule.** Facts about an edge are written as prose sentences with links inline, never as label-value pairs the reader must decode. The claim and its evidence sit at the same size so they read as one argument.
@@ -238,19 +246,19 @@ Utility-square with rounded working edges. Interactive smalls — buttons, input
 - **Shape:** 6px radius, uniform 2.25rem height for every header control so the random-edge button and theme toggle align as a pair.
 - **Primary:** solid Deep Teal fill with paper-colored text (btn-sm sizing); used for the header "Random edge" action and page actions. Dark: Sea-Glass fill on Slate Bench.
 - **Ghost:** text-only teal (the theme toggle); border appears from the button chrome only.
-- **Copy (micro):** 0.75rem recessed chip with hairline border; hover re-inks to teal; the copied state flips border and text to Verdict Green.
+- **Copy:** small-step recessed chip with hairline border; hover re-inks to teal; the copied state flips border and text to Verdict Green.
 - **Inline "Show N more":** a chip-shaped button that lives inside a comma-separated sentence — inline, not block, so folding a list never opens a vertical gap.
 - **Hover/Focus:** hover re-inks border/text to teal (never lifts); `:focus-visible` is the global 2px teal outline.
 
 ### Chips and Pills
 - **Version pill:** full pill, teal 14% tint background, teal text, teal-35% tint border; mono label. The unit of navigation on the KG bar and the versions timeline.
-- **Count badge:** mono 0.7rem full pill on Paper Recessed with hairline border; sits as a flex sibling of its pill, never nested inside it.
+- **Count badge:** small-step mono full pill on Paper Recessed with hairline border; sits as a flex sibling of its pill, never nested inside it.
 - **Latest badge:** uppercase 700 micro-label, Verdict Green 18% tint; trails the version number inline in count lines and as a flex sibling in pill rows.
 - **Identifier chip (`.chip`):** mono, recessed, max-width 16rem, wraps anywhere; hover re-inks to teal (it is usually a link).
 
 ### Cards / Containers
 - **KG row:** 10px radius, 1px edge border, paper background, 0.85rem x 1rem padding; name, canonical identifier, and the measured pill row inside.
-- **Edge node:** 10px radius card holding one side of the relationship diagram — uppercase role label, 1.1rem 700 name, category, and an ID line with a copy chip.
+- **Edge node:** 10px radius card holding one side of the relationship diagram: uppercase role label, 1.2rem 700 name, category, and an ID line with a copy chip.
 - **Boxes/notes:** known-error and bar notices are recessed fills with hairline borders and the standard 10px box radius; the known-error box adds a 3px Caution Amber left bar whose ends follow the rounding.
 
 ### Versions Timeline

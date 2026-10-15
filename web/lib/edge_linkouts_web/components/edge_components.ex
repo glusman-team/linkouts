@@ -207,7 +207,7 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
         </button>
         <a
           :if={@href}
-          class="ext-link text-sm"
+          class="ext-link"
           href={@href}
           title={@host}
           target="_blank"
@@ -611,7 +611,7 @@ defmodule EdgeLinkoutsWeb.EdgeComponents do
     assigns = assign(assigns, fields: assigns.doc |> Map.to_list() |> Enum.sort())
 
     ~H"""
-    <p class="text-sm opacity-80">
+    <p class="raw-doc-notice opacity-80">
       This knowledge graph has no display configuration, so the stored fields are shown as-is.
     </p>
     <dl>

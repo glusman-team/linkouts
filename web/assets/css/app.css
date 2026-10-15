@@ -119,10 +119,25 @@
 :root {
   --font-sans: "Atkinson Hyperlegible Next", system-ui, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", monospace;
+  /* Minor third: one 1.2 ratio, anchored to the reader's default body size.
+     Metadata stops at the first step below body, rather than shrinking identifiers. */
+  --type-small: calc(1rem / 1.2);
+  --type-body: 1rem;
+  --type-lead: 1.2rem;
+  --type-title: 1.44rem;
+  --type-claim: 1.728rem;
+  --leading-body: 1.7;
+  --leading-heading: 1.4;
+  --leading-ui: 1.5;
 }
 
 html {
   font-family: var(--font-sans);
+}
+
+body {
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }
 
 code, kbd, pre {
@@ -143,6 +158,15 @@ code, kbd, pre {
 
 /* --- shell ------------------------------------------------------------------- */
 
+.preview-notice {
+  padding: 0.5rem 1rem;
+  text-align: center;
+  font-size: var(--type-small);
+  line-height: var(--leading-ui);
+  color: var(--color-primary-content);
+  background: var(--color-primary);
+}
+
 /* The research-use disclaimer is a legal boundary, not a footnote: banner treatment, a
    warning icon and bold text, but in the theme's own colors — amber washed out badly in
    dark mode, and unreadable beats thematic. */
@@ -157,9 +181,9 @@ code, kbd, pre {
   justify-content: center;
   gap: 0.5rem;
   text-align: center;
-  font-size: 0.85rem;
+  font-size: var(--type-small);
   font-weight: 600;
-  line-height: 1.5;
+  line-height: var(--leading-ui);
   color: var(--color-base-content);
   background: var(--color-base-200);
   border-bottom: 1px solid var(--color-base-300);
@@ -201,6 +225,7 @@ code, kbd, pre {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 1rem;
 }
 
@@ -209,6 +234,7 @@ code, kbd, pre {
 .site-header-inner .btn {
   height: 2.25rem;
   min-height: 2.25rem;
+  font-size: var(--type-small);
   display: inline-flex;
   align-items: center;
   padding-inline: 0.75rem;
@@ -216,22 +242,18 @@ code, kbd, pre {
 
 .brand {
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: var(--type-body);
   letter-spacing: -0.01em;
   color: var(--color-base-content);
+  overflow-wrap: anywhere;
 }
 
-/* Narrow phones: the fixed rail padding and the full button label overflow the row and clip
-   the theme toggle off the edge. Tighten the rail, and let the die carry the random button —
-   the label stays for screen readers. The brand steps down one size so 320px still fits. */
+/* Narrow phones: tighten the rail and let the die carry the random button; its label
+   stays available to screen readers. The header may wrap when the reader enlarges text. */
 @media (max-width: 30rem) {
   .site-header-inner {
     padding-inline: 1rem;
     gap: 0.5rem;
-  }
-
-  .brand {
-    font-size: 1rem;
   }
 
   .site-header-inner .btn {
@@ -257,7 +279,7 @@ code, kbd, pre {
   margin-inline: auto;
   max-width: 64rem;
   padding: 1.25rem 2rem;
-  font-size: 0.8rem;
+  font-size: var(--type-small);
   color: color-mix(in oklab, var(--color-base-content) 65%, var(--color-base-100));
 }
 
@@ -270,7 +292,7 @@ code, kbd, pre {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  font-size: 0.78rem;
+  font-size: var(--type-small);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -311,7 +333,7 @@ code, kbd, pre {
   align-items: center;
   gap: 0.35rem;
   color: var(--color-primary);
-  font-size: 0.85rem;
+  font-size: var(--type-small);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -324,7 +346,7 @@ code, kbd, pre {
   border-radius: var(--radius-field);
   background: var(--color-base-200);
   color: var(--color-base-content);
-  font-size: 0.75rem;
+  font-size: var(--type-small);
   padding: 0.15rem 0.5rem;
   cursor: pointer;
 }
@@ -342,8 +364,8 @@ code, kbd, pre {
 .count-badge {
   display: inline-block;
   font-family: var(--font-mono);
-  font-size: 0.7rem;
-  line-height: 1.4;
+  font-size: var(--type-small);
+  line-height: var(--leading-heading);
   padding: 0 0.45rem;
   border-radius: 999px;
   background: var(--color-base-200);
@@ -354,7 +376,7 @@ code, kbd, pre {
 
 .version-pill {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--type-small);
   padding: 0.1rem 0.55rem;
   border-radius: 999px;
   background: color-mix(in oklab, var(--color-primary) 14%, var(--color-base-100));
@@ -372,7 +394,7 @@ code, kbd, pre {
 }
 
 .state-kicker {
-  font-size: 0.78rem;
+  font-size: var(--type-small);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -384,7 +406,8 @@ code, kbd, pre {
 .state-kicker-error { color: var(--color-error); }
 
 .state-title {
-  font-size: 1.6rem;
+  font-size: var(--type-title);
+  line-height: var(--leading-heading);
   font-weight: 700;
   letter-spacing: -0.015em;
   margin-bottom: 0.75rem;
@@ -425,8 +448,8 @@ code, kbd, pre {
   align-items: center;
   gap: 0.6rem;
   flex-wrap: wrap;
-  font-size: 0.85rem;
-  line-height: 1.4;
+  font-size: var(--type-small);
+  line-height: var(--leading-heading);
   margin-bottom: 0.75rem;
 }
 
@@ -434,15 +457,17 @@ code, kbd, pre {
    with a colon the template adds after the rendered segments. One step above body scale so
    it hands off to the sentence, and clearly under it. */
 .edge-asserts {
-  font-size: 1.15rem;
-  line-height: 1.4;
+  font-size: var(--type-lead);
+  line-height: var(--leading-heading);
   margin-bottom: 0.35rem;
 }
 
 .edge-sentence {
-  font-size: clamp(1.35rem, 1.05rem + 1.6vw, 1.9rem);
+  /* Interpolate between scale steps at 22.5rem and 67.5rem viewport widths. */
+  font-size: clamp(var(--type-title), 1.296rem + 0.64vw, var(--type-claim));
   font-weight: 600;
-  line-height: 1.4;
+  line-height: var(--leading-heading);
+  overflow-wrap: anywhere;
   letter-spacing: -0.01em;
   margin-bottom: 0.9rem;
 }
@@ -452,7 +477,7 @@ code, kbd, pre {
   align-items: center;
   gap: 0.6rem;
   flex-wrap: wrap;
-  font-size: 0.8rem;
+  font-size: var(--type-small);
 }
 
 .edge-idline code {
@@ -460,7 +485,9 @@ code, kbd, pre {
   border: 1px solid var(--color-base-300);
   border-radius: var(--radius-field);
   padding: 0.15rem 0.5rem;
-  font-size: 0.78rem;
+  font-size: var(--type-small);
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 /* Explicit single column with a zero floor: an implicit auto track sizes to the widest
@@ -481,21 +508,21 @@ code, kbd, pre {
 
 /* The text relationship line: subject, relation, object and qualifiers, identifiers inline. */
 .edge-relation {
-  font-size: 1rem;
-  line-height: 1.7;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }
 
 .edge-relation code {
   background: var(--color-base-200);
   border-radius: var(--radius-field);
   padding: 0.1rem 0.45rem;
-  font-size: 0.85rem;
+  font-size: var(--type-small);
   overflow-wrap: anywhere;
 }
 
 .latest-badge {
   display: inline-block;
-  font-size: 0.7rem;
+  font-size: var(--type-small);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -533,7 +560,7 @@ code, kbd, pre {
 }
 
 .edge-node-role {
-  font-size: 0.7rem;
+  font-size: var(--type-small);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -541,14 +568,14 @@ code, kbd, pre {
 }
 
 .edge-node-name {
-  font-size: 1.1rem;
+  font-size: var(--type-lead);
   font-weight: 700;
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
 
 .edge-node-cat {
-  font-size: 0.8rem;
+  font-size: var(--type-small);
   color: color-mix(in oklab, var(--color-base-content) 70%, var(--color-base-100));
 }
 
@@ -558,7 +585,7 @@ code, kbd, pre {
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
-  font-size: 0.78rem;
+  font-size: var(--type-small);
 }
 
 .edge-node-id code {
@@ -566,6 +593,12 @@ code, kbd, pre {
   border-radius: var(--radius-field);
   padding: 0.1rem 0.45rem;
   overflow-wrap: anywhere;
+}
+
+.edge-node-id .ext-link,
+.raw-doc-notice,
+.state-reason {
+  font-size: var(--type-small);
 }
 
 .edge-rel {
@@ -585,13 +618,13 @@ code, kbd, pre {
 }
 
 .edge-rel-predicate {
-  font-size: 0.85rem;
+  font-size: var(--type-small);
   font-weight: 600;
   text-align: center;
 }
 
 .edge-rel-raw {
-  font-size: 0.7rem;
+  font-size: var(--type-small);
   color: color-mix(in oklab, var(--color-base-content) 60%, var(--color-base-100));
   text-align: center;
   overflow-wrap: anywhere;
@@ -638,7 +671,7 @@ code, kbd, pre {
   border-radius: 999px;
   background: var(--color-base-100);
   padding: 0.25rem 0.8rem;
-  font-size: 0.82rem;
+  font-size: var(--type-small);
   color: var(--color-base-content);
 }
 
@@ -666,8 +699,8 @@ code, kbd, pre {
 /* Diff body sits at the section scale, like Methods and Known issues: 1rem/1.7, the
    size the rest of the page reads at. */
 .diff-summary {
-  font-size: 1rem;
-  line-height: 1.7;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
   margin-bottom: 0.6rem;
 }
 
@@ -676,7 +709,7 @@ code, kbd, pre {
 }
 
 .diff-group h3 {
-  font-size: 0.78rem;
+  font-size: var(--type-small);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -697,8 +730,8 @@ code, kbd, pre {
   align-items: baseline;
   gap: 0.45rem;
   flex-wrap: wrap;
-  font-size: 1rem;
-  line-height: 1.7;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }
 
 .diff-field {
@@ -734,7 +767,7 @@ a.diff-field:hover {
   background: var(--color-base-200);
   border-radius: var(--radius-field);
   padding: 0.05rem 0.4rem;
-  font-size: 0.85rem;
+  font-size: var(--type-small);
   overflow-wrap: anywhere;
 }
 
@@ -746,8 +779,8 @@ a.diff-field:hover {
 }
 
 .diff-path {
-  font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", monospace;
-  font-size: 0.74rem;
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -777,8 +810,8 @@ a.diff-field:hover {
 /* Methods, provenance, and tips share one body scale and the existing section heading. */
 .edge-prose p {
   margin: 0;
-  font-size: 1rem;
-  line-height: 1.7;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
   color: color-mix(in oklab, var(--color-base-content) 80%, var(--color-base-100));
 }
 
@@ -805,7 +838,7 @@ a.diff-field:hover {
   border-radius: var(--radius-field);
   background: color-mix(in oklab, var(--color-primary) 10%, var(--color-base-100));
   color: var(--color-primary);
-  font-size: 0.82rem;
+  font-size: var(--type-small);
   font-weight: 600;
   padding: 0.05rem 0.5rem;
   margin: 0 0 0 0.15rem;
@@ -825,7 +858,7 @@ a.diff-field:hover {
   background: var(--color-base-200);
   padding: 0.12rem 0.55rem;
   font-family: var(--font-mono);
-  font-size: 0.74rem;
+  font-size: var(--type-small);
   color: var(--color-base-content);
   overflow-wrap: anywhere;
 }
@@ -843,8 +876,8 @@ a.chip:hover {
 
 /* About block */
 .edge-about p {
-  font-size: 1rem;
-  line-height: 1.7;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
   color: color-mix(in oklab, var(--color-base-content) 82%, var(--color-base-100));
   margin-bottom: 0.6rem;
 }
@@ -866,8 +899,8 @@ a.chip:hover {
   border: 1px solid color-mix(in oklab, var(--color-warning) 45%, var(--color-base-300));
   background: color-mix(in oklab, var(--color-warning) 12%, var(--color-base-100));
   color: color-mix(in oklab, var(--color-base-content) 85%, var(--color-base-100));
-  font-size: 0.9rem;
-  line-height: 1.5;
+  font-size: var(--type-body);
+  line-height: var(--leading-ui);
 }
 
 .bar-head {
@@ -875,7 +908,8 @@ a.chip:hover {
 }
 
 .bar-title {
-  font-size: 1.6rem;
+  font-size: var(--type-title);
+  line-height: var(--leading-heading);
   font-weight: 700;
   letter-spacing: -0.015em;
 }
@@ -912,7 +946,7 @@ a.chip:hover {
 }
 
 .kg-name {
-  font-size: 1.05rem;
+  font-size: var(--type-lead);
   font-weight: 650;
   color: var(--color-base-content);
   overflow-wrap: anywhere;
@@ -923,7 +957,7 @@ a.kg-name:hover {
 }
 
 .kg-source {
-  font-size: 0.8rem;
+  font-size: var(--type-small);
 }
 
 .kg-meta {
@@ -931,13 +965,13 @@ a.kg-name:hover {
   align-items: baseline;
   gap: 0.6rem;
   flex-wrap: wrap;
-  font-size: 0.8rem;
+  font-size: var(--type-small);
   color: color-mix(in oklab, var(--color-base-content) 65%, var(--color-base-100));
 }
 
 .kg-canonical {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--type-small);
   overflow-wrap: anywhere;
   color: color-mix(in oklab, var(--color-base-content) 70%, var(--color-base-100));
 }
@@ -978,7 +1012,7 @@ a.kg-name:hover {
 .kg-more {
   flex: 0 0 auto;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: var(--type-small);
   line-height: 1;
 }
 
