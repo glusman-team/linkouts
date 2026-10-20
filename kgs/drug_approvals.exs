@@ -145,23 +145,43 @@
       {:list, "publications",
        {:url, "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid={self_local}",
         "{self_local}"}, ", ", 3},
-    # The searches run over every name the source used for each concept — the preferred name
-    # plus each pipe-delimited original — as a quoted-phrase OR group, so a label that only
-    # spells the name the way the source text did is still found. The link text stays the
-    # preferred name, so what the reader reads is unaffected.
-    "subject_query" => {:or_query, "subject_name", "original_subject"},
-    "object_query" => {:or_query, "object_name", "original_object"},
+    # The searches run over every name the source used for each concept - the preferred name
+    # plus each pipe-delimited original - as an OR group, so a label that only spells the name
+    # the way the source text did is still found. The link text stays the preferred name, so
+    # what the reader reads is unaffected.
+    #
+    # Query syntax, live-verified against dailymed.nlm.nih.gov (2026-10-19): the query box is
+    # Lucene; WITHOUT adv=1 it searches drug names only, so a disease name matches nothing
+    # ("neural tube defects" -> 0), while adv=1 searches full label text (same query -> 1000).
+    # Every search linkout therefore carries adv=1. The :terms variants add each multiword
+    # name's bare word conjunction (documented semantics: NAME:(a b) = both words), because
+    # DAKP corroborates a treats edge when the label names a substring of the stored phrase:
+    # the object can be longer than anything the label says (FAERS "hormone receptor positive
+    # breast cancer" corroborated by a label saying only "breast cancer"), and a quoted
+    # phrase that long matches nothing while the word conjunction still reaches the label.
+    "subject_query" =>
+      {:or_query, "subject_name", "original_subject", %{variants: [:phrase, :terms]}},
+    "object_query" =>
+      {:or_query, "object_name", "original_object", %{variants: [:phrase, :terms]}},
     "search_subject" =>
       {:url,
-       "https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query={subject_query}",
+       "https://dailymed.nlm.nih.gov/dailymed/search.cfm?adv=1&labeltype=all&query={subject_query}",
        "labels mentioning {subject_name}"},
     "search_object" =>
       {:url,
-       "https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query={object_query}",
+       "https://dailymed.nlm.nih.gov/dailymed/search.cfm?adv=1&labeltype=all&query={object_query}",
        "labels mentioning {object_name}"},
+    # The both-names search used to constrain the object to the Indications section
+    # ("34067-9:"), the section approved-treats are corroborated in. That zeroed out real
+    # edges: contraindications are NER-mined from six SPL sections (Contraindications 34070-3,
+    # Indications 34067-9, Boxed Warning 34066-1, Warnings 43685-7 and the legacy 34071-1 /
+    # 42232-9), and the DESFLURANE-contraindicated-for-asthma edge's mention lives in the
+    # Warnings section, where the indications-only query returned 0 results for an edge with
+    # a supporting label in hand. Unrestricted full-text AND is a strict superset of any
+    # section-scoped form (verified live), so the object stays unrestricted.
     "search_both" =>
       {:url,
-       "https://dailymed.nlm.nih.gov/dailymed/search.cfm?adv=1&labeltype=all&query=({subject_query})+AND+34067-9:({object_query})",
+       "https://dailymed.nlm.nih.gov/dailymed/search.cfm?adv=1&labeltype=all&query=({subject_query})+AND+({object_query})",
        "labels mentioning both {subject_name} and {object_name}"},
 
     # The sentence opens by naming its source, and the name links out to the source's
@@ -198,7 +218,6 @@
   # ("DrugApprovals KP asserts:" / "Metformin has been approved for treating ..."),
   # the way the legacy page headed each relationship.
   asserts: "{kp} asserts",
-
   title: "{subject_name} and {object_name}",
   edge:
     "{subject} {relation} {object}{context}{qualifier_anatomical}{qualifier_frequency}{qualifier_population}{qualifier_sex}{qualifier_temporal}.",

@@ -548,16 +548,63 @@ defmodule EdgeLinkouts.DisplayTest do
       assert [subject_href, object_href, both_href] = links
 
       # Every name the source used is a quoted phrase in one OR group; case-insensitive
-      # duplicates collapse to the first spelling. The link text keeps the preferred name,
-      # so only the underlying query changes.
+      # duplicates collapse to the first spelling, and each multiword variant also emits its
+      # bare word-conjunction form (documented DailyMed AND semantics), because the stored
+      # phrase can be longer than any label wording. The link text keeps the preferred name,
+      # so only the underlying query changes. adv=1 is what switches DailyMed from
+      # drug-name search to full label-text search; without it a disease name matches nothing.
       assert subject_href =~
-               "query=%22desflurane%22+OR+%22Desflurane+USAN%22"
+               "query=%22desflurane%22+OR+%22Desflurane+USAN%22+OR+Desflurane+USAN"
 
       assert object_href =~
                "query=%22asthma%22+OR+%22Asthma+%28disorder%29%22"
 
       assert both_href =~
-               "query=(%22desflurane%22+OR+%22Desflurane+USAN%22)+AND+34067-9:(%22asthma%22+OR+%22Asthma+%28disorder%29%22)"
+               "query=(%22desflurane%22+OR+%22Desflurane+USAN%22+OR+Desflurane+USAN)+AND+(%22asthma%22+OR+%22Asthma+%28disorder%29%22)"
+
+      # All three searches run in advanced (full-text) mode; the linkouts must never
+      # regress to the default mode that searches drug names only.
+      for href <- links do
+        assert href =~ "search.cfm?adv=1&labeltype=all&query="
+      end
+    end
+
+    test "the both-names search is an unrestricted full-text AND", %{
+      resolved: resolved,
+      config: config
+    } do
+      # Why unrestricted: DAKP mines contraindication evidence from six SPL sections, not
+      # only Indications, and a section-scoped object clause returned 0 results for the
+      # DESFLURANE/asthma edge (mention lives in Warnings) despite its supporting label.
+      # Live evidence 2026-10-19: the old "34067-9:"-scoped query returned 0 for that edge;
+      # the unrestricted AND returns 6. The query must stay free of section field codes.
+      edge = Enum.find(resolved, &(&1.version == @v1))
+
+      doc =
+        Map.merge(edge.doc, %{
+          "subject_name" => "desflurane",
+          "original_subject" => "DESFLURANE",
+          "object_name" => "asthma",
+          "original_object" => "asthma"
+        })
+
+      footnote = Display.footnote(config, doc, edge.version) |> Segment.flatten()
+
+      assert [{:link, both_href, _}] =
+               footnote
+               |> Enum.filter(fn
+                 {:link, href, _} ->
+                   href =~ "dailymed.nlm.nih.gov/dailymed/search.cfm" and href =~ "+AND+"
+
+                 _ ->
+                   false
+               end)
+               |> Enum.map(fn {:link, href, _} -> {:link, href, nil} end)
+
+      refute both_href =~ "34067-9:"
+
+      assert both_href =~
+               "query=(%22desflurane%22)+AND+(%22asthma%22)"
     end
   end
 
