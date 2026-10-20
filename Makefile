@@ -79,7 +79,7 @@ go-fuzz: ## Long local fuzz run of the delta codec
 
 # ---------------------------------------------------------------- elixir
 
-.PHONY: ex-fmt ex-fmt-check ex-lint ex-compile ex-test kgs-check
+.PHONY: ex-fmt ex-fmt-check ex-lint ex-compile ex-test ex-test-live kgs-check
 ex-fmt: ## mix format
 	cd $(WEB) && mix format
 
@@ -94,6 +94,9 @@ ex-lint: ## credo --strict
 
 ex-test: ## mix test (Cosmos stubbed, no network)
 	cd $(WEB) && mix test --warnings-as-errors
+
+ex-test-live: ## live DailyMed probe (network): search linkouts return results for backed edges
+	cd $(WEB) && mix test --only live
 
 ex-test-cluster: ## two-node cluster proofs (starts distribution on loopback)
 	cd $(WEB) && mix test --warnings-as-errors --only cluster
