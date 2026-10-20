@@ -488,7 +488,11 @@ defmodule EdgeLinkouts.Display.Value do
     bare =
       if :terms in variants do
         term
+        # Leaf parentheticals first ("Asthma (disorder)" -> "Asthma"), then any residual
+        # bracket characters: unbalanced or nested input cannot be balance-checked by regex,
+        # and a leaked paren would turn the whole Lucene query into a parse error.
         |> String.replace(~r/[\(\[][^)\]]*[\)\]]/, " ")
+        |> String.replace(~r/[\(\[\]\)]/, "")
         |> String.replace(~r/\s+/, " ")
         |> String.trim()
       end

@@ -85,7 +85,7 @@ field, and is percent-encoded, so a value containing a space or an `&` cannot br
 string or add a parameter.
 
 ```elixir
-{:url, "https://dailymed.nlm.nih.gov/dailymed/search.cfm?query={subject_name}", "labels for {subject_name}"}
+{:url, "https://dailymed.nlm.nih.gov/dailymed/search.cfm?adv=1&labeltype=all&query={subject_name}", "labels for {subject_name}"}
 ```
 
 ### `{:local, name}`
@@ -162,7 +162,7 @@ spelling wins). Built for `{:url, ...}` search templates:
 
 ```elixir
 "subject_query" => {:or_query, "subject_name", "original_subject"},
-{:url, "https://dailymed.nlm.nih.gov/dailymed/search.cfm?query={subject_query}", "labels for {subject_name}"}
+{:url, "https://dailymed.nlm.nih.gov/dailymed/search.cfm?adv=1&labeltype=all&query={subject_query}", "labels for {subject_name}"}
 ```
 
 renders the query `"gamma-Hydroxybutyric acid" OR "sodium oxybate"` while the link text stays

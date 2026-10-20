@@ -257,6 +257,35 @@ defmodule EdgeLinkouts.Display.ValueTest do
              |> Segment.to_text() == ~s|"asthma" OR "Asthma (disorder)"|
     end
 
+    test "unbalanced or nested parentheticals cannot leak into the bare form" do
+      # A leaked paren would turn the bare word conjunction into a Lucene parse error and
+      # zero all three linkouts for the edge, so residual brackets are stripped outright.
+      # Quoted phrases may legitimately contain literal parens, so the check strips quoted
+      # segments first and only asserts the bare remainder.
+      for original <- ["asthma (disorder", "bronchial asthma (disorder (chronic))"] do
+        ctx = or_query_ctx(%{"name" => original, "original" => ""})
+
+        query =
+          Value.render(
+            {:or_query, "name", "original", %{variants: [:phrase, :terms]}},
+            ctx
+          )
+          |> Segment.to_text()
+
+        bare_remainder = String.replace(query, ~r/"[^"]*"/, "")
+        refute bare_remainder =~ "("
+        refute bare_remainder =~ ")"
+      end
+
+      # The nested case still keeps a useful two-word conjunction.
+      ctx =
+        or_query_ctx(%{"name" => "bronchial asthma (disorder (chronic))", "original" => ""})
+
+      assert Value.render({:or_query, "name", "original", %{variants: [:phrase, :terms]}}, ctx)
+             |> Segment.to_text() ==
+               ~s|"bronchial asthma (disorder (chronic))" OR bronchial asthma|
+    end
+
     test ":phrase alone matches the 2-tuple exactly" do
       ctx =
         or_query_ctx(%{"name" => "desflurane", "original" => "DESFLURANE|Desflurane USAN"})

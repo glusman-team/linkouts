@@ -79,7 +79,7 @@ go-fuzz: ## Long local fuzz run of the delta codec
 
 # ---------------------------------------------------------------- elixir
 
-.PHONY: ex-fmt ex-fmt-check ex-lint ex-compile ex-test ex-test-live kgs-check
+.PHONY: ex-fmt ex-fmt-check ex-lint ex-compile ex-test ex-test-live ex-test-cluster kgs-check
 ex-fmt: ## mix format
 	cd $(WEB) && mix format
 

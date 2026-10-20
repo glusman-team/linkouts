@@ -92,38 +92,42 @@ defmodule EdgeLinkouts.DailymedLinkoutsLiveTest do
             end
         end
       end)
-      # Be polite to the public endpoint: sequential fetches with a small spacing.
-      |> Enum.map(fn {edge, kind, url} ->
-        Process.sleep(400)
-        {edge, kind, url, result_count(url)}
+      # Be polite to the public endpoint: sequential fetches with a small spacing. Every
+      # entry that is not {:ok, n} with n > 0 is a failure: non-200 responses and transport
+      # errors count as failures, never as zero results or as passes.
+      |> Enum.map(fn
+        {edge, :links, other} ->
+          {edge, :links, other, {:error, :missing_search_links}}
+
+        {edge, kind, url} ->
+          Process.sleep(400)
+          {edge, kind, url, result_count(url)}
       end)
-      |> Enum.reject(fn {_edge, kind, _url, count} ->
-        kind == :links or count > 0
-      end)
+      |> Enum.reject(fn {_edge, _kind, _url, {:ok, count}} -> count > 0 end)
 
     assert failures == [],
-           "DailyMed search linkouts returned no results for backed edges: " <>
-             inspect(Enum.map(failures, fn {e, k, u, n} -> {e.doc["id"], k, n, u} end))
+           "DailyMed search linkouts failed for backed edges: " <>
+             inspect(Enum.map(failures, fn {e, k, u, r} -> {e.doc["id"], k, r, u} end))
   end
 
-  # The results page is server-rendered HTML whose count line reads "N results". A non-200
-  # or an unparseable page counts as a failure, never as zero results: the probe must fail
-  # loudly on outages rather than pass vacuously.
+  # The results page is server-rendered HTML whose count line reads "N results". The probe
+  # must fail loudly on outages rather than pass vacuously, so anything but a 200 with a
+  # parseable count returns {:error, reason} instead of a number.
   defp result_count(url) do
     req = Finch.build(:get, url, [{"user-agent", "EdgeLinkouts-live-probe/1.0"}])
 
     case Finch.request(req, __MODULE__.Finch, receive_timeout: 60_000) do
       {:ok, %Finch.Response{status: 200, body: body}} ->
         case Regex.run(~r/([\d,]+)\s+results/i, body) do
-          [_, n] -> n |> String.replace(",", "") |> String.to_integer()
-          nil -> 0
+          [_, n] -> {:ok, n |> String.replace(",", "") |> String.to_integer()}
+          nil -> {:error, :results_line_missing}
         end
 
       {:ok, %Finch.Response{status: status}} ->
-        "HTTP #{status}"
+        {:error, {:http_status, status}}
 
       {:error, reason} ->
-        "HTTP error #{inspect(reason)}"
+        {:error, reason}
     end
   end
 end
