@@ -44,7 +44,7 @@ defmodule EdgeLinkouts.DailymedLinkoutsLiveTest do
       end)
       |> Enum.uniq_by(& &1.doc["id"])
 
-    assert length(edges) > 0
+    assert edges != []
 
     failures =
       edges
