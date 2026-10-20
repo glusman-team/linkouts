@@ -3,6 +3,10 @@ defmodule EdgeLinkouts.Display.ValueTest do
 
   alias EdgeLinkouts.Display.{Segment, Value}
 
+  defp or_query_ctx(doc) do
+    %{doc: doc, version: "kg-1.0.0", slots: %{}, aliases: %{}}
+  end
+
   defp number(value, format) do
     ctx = %{doc: %{"n" => value}, version: "kg-1.0.0", slots: %{}, aliases: %{}}
     {:number, "n", format} |> Value.render(ctx) |> Segment.to_text()
@@ -182,6 +186,86 @@ defmodule EdgeLinkouts.Display.ValueTest do
 
       assert Segment.to_text(segments) ==
                "dailymed:a1, dailymed:b2, dailymed:c3, dailymed:d4, dailymed:e5"
+    end
+  end
+
+  describe "{:or_query, field, original_field}" do
+    test "every name variant is a quoted phrase in one OR group, deduped case-insensitively" do
+      ctx =
+        or_query_ctx(%{
+          "name" => "asthma",
+          "original" => "asthma|Asthma (disorder)|ASTHMA"
+        })
+
+      # The preferred spelling wins the case-insensitive dedup, so "PAIN"-style dump
+      # noise collapses without reordering the surviving variants.
+      assert Value.render({:or_query, "name", "original"}, ctx) |> Segment.to_text() ==
+               ~s|"asthma" OR "Asthma (disorder)"|
+    end
+
+    test "the 3-tuple never emits a bare word-conjunction form" do
+      ctx = or_query_ctx(%{"name" => "desflurane", "original" => "DESFLURANE"})
+
+      assert Value.render({:or_query, "name", "original"}, ctx) |> Segment.to_text() ==
+               ~s("desflurane")
+    end
+
+    test "missing names render no query, matching the other field forms" do
+      assert Value.render({:or_query, "name", "original"}, or_query_ctx(%{}))
+             |> Segment.to_text() == ""
+    end
+  end
+
+  describe "{:or_query, field, original_field, %{variants: [:phrase, :terms]}}" do
+    test "a multiword variant also emits its bare word-conjunction form, right after its phrase" do
+      ctx =
+        or_query_ctx(%{"name" => "desflurane", "original" => "DESFLURANE|Desflurane USAN"})
+
+      # Why the bare form exists: DAKP corroborates a treats edge when the label names a
+      # substring of the stored phrase, so the quoted phrase can match nothing while the
+      # documented DailyMed word conjunction ("NAME:(a b)" = both words) still reaches the
+      # label. Single-word variants gain nothing over their quoted phrase.
+      assert Value.render(
+               {:or_query, "name", "original", %{variants: [:phrase, :terms]}},
+               ctx
+             )
+             |> Segment.to_text() ==
+               ~s("desflurane" OR "Desflurane USAN" OR Desflurane USAN)
+    end
+
+    test "single-word variants do not duplicate as bare words" do
+      ctx = or_query_ctx(%{"name" => "PAIN", "original" => "PAIN|Pain"})
+
+      assert Value.render(
+               {:or_query, "name", "original", %{variants: [:phrase, :terms]}},
+               ctx
+             )
+             |> Segment.to_text() == ~s("PAIN")
+    end
+
+    test "parenthetical semantic qualifiers are stripped from the bare form" do
+      ctx =
+        or_query_ctx(%{"name" => "asthma", "original" => "asthma|Asthma (disorder)"})
+
+      # Labels never print the "(disorder)" qualifier, so the bare form of that variant
+      # would be the single word "asthma", which its own quoted phrase already covers;
+      # only the quoted phrases survive.
+      assert Value.render(
+               {:or_query, "name", "original", %{variants: [:phrase, :terms]}},
+               ctx
+             )
+             |> Segment.to_text() == ~s|"asthma" OR "Asthma (disorder)"|
+    end
+
+    test ":phrase alone matches the 2-tuple exactly" do
+      ctx =
+        or_query_ctx(%{"name" => "desflurane", "original" => "DESFLURANE|Desflurane USAN"})
+
+      assert Value.render(
+               {:or_query, "name", "original", %{variants: [:phrase]}},
+               ctx
+             )
+             |> Segment.to_text() == ~s("desflurane" OR "Desflurane USAN")
     end
   end
 end

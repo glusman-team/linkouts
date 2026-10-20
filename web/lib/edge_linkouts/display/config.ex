@@ -413,6 +413,30 @@ defmodule EdgeLinkouts.Display.Config do
   def spec_problems({:names, _, _, _} = other, where),
     do: ["#{where}: {:names, field, prefix, suffix} expected, got #{inspect(other)}"]
 
+  def spec_problems({:or_query, name, original_name, %{variants: variants}}, where)
+      when (is_binary(name) or is_atom(name)) and
+             (is_binary(original_name) or is_atom(original_name)) and is_list(variants) do
+    bad = Enum.reject(variants, &(&1 in [:phrase, :terms]))
+
+    cond do
+      variants == [] ->
+        ["#{where}: {:or_query, ..., %{variants: [...]}} variants must be non-empty"]
+
+      bad != [] ->
+        [
+          "#{where}: {:or_query, ..., %{variants: [...]}} variants must be :phrase/:terms, got #{inspect(bad)}"
+        ]
+
+      true ->
+        []
+    end
+  end
+
+  def spec_problems({:or_query, _, _, other}, where),
+    do: [
+      "#{where}: {:or_query, field, original_field, %{variants: [...]}} expected, got #{inspect(other)}"
+    ]
+
   def spec_problems({:or_query, name, original_name}, _where)
       when (is_binary(name) or is_atom(name)) and
              (is_binary(original_name) or is_atom(original_name)),
@@ -668,6 +692,7 @@ defmodule EdgeLinkouts.Display.Config do
   defp collect_spec_slots({:default, _name, fallback}), do: collect_spec_slots(fallback)
   # An OR query reads document fields only; it references no slots.
   defp collect_spec_slots({:or_query, _name, _original_name}), do: []
+  defp collect_spec_slots({:or_query, _name, _original_name, _opts}), do: []
   # A {:supporting} clause's framing is literal text; only its fallback can reference slots.
   defp collect_spec_slots({:supporting, _key, _prefix, _suffix, fallback}),
     do: collect_spec_slots(fallback)

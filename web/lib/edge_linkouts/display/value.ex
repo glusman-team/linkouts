@@ -26,6 +26,9 @@ defmodule EdgeLinkouts.Display.Value do
         {:or_query, name, original_name}           a Lucene OR group of every name a source
                                                    used for the concept: the preferred name
                                                    plus each pipe-delimited original, quoted
+        {:or_query, name, original_name,
+         %{variants: [:phrase, :terms]}}              same, plus a bare word-conjunction
+                                                   variant for each multiword name
         {:supporting, key, prefix, suffix, rewordings, fallback}
                                                    text from a supporting_text "key: value"
                                                    entry, framed as "prefix + value + suffix";
@@ -62,6 +65,7 @@ defmodule EdgeLinkouts.Display.Value do
           | {:count, atom() | String.t()}
           | {:default, atom() | String.t(), spec()}
           | {:or_query, atom() | String.t(), atom() | String.t()}
+          | {:or_query, atom() | String.t(), atom() | String.t(), %{variants: [:phrase | :terms]}}
           | {:names, atom() | String.t()}
           | {:names, atom() | String.t(), spec(), spec()}
           | {:compound, [spec()]}
@@ -309,12 +313,27 @@ defmodule EdgeLinkouts.Display.Value do
   # source used for a concept: the preferred name plus each pipe-delimited original (the
   # same convention original_subject/original_object use), each a quoted phrase, joined with
   # OR. Deduplication is case-insensitive because dumps routinely carry "Pain" and "PAIN";
-  # the first spelling wins, which keeps the preferred name's casing when it survives.
+  # the first spelling wins, which keeps the preferred name's casing when it survives. The
+  # 3-tuple is the phrase-only form; the 4-tuple opts into extra variant shapes per name.
   def render({:or_query, name, original_name}, ctx) do
+    render({:or_query, name, original_name, %{variants: [:phrase]}}, ctx)
+  end
+
+  # %{variants: [:phrase, :terms]} adds, after each quoted phrase, the bare word-conjunction
+  # form of a multiword name ("blood pressure increased" unquoted). DailyMed documents bare
+  # multi-word groups as word conjunctions, and a conjunction survives reorderings a quoted
+  # phrase cannot: DAKP corroborates a treats edge when the label names a substring of the
+  # FAERS indication, so the stored phrase can be longer than any label wording and the
+  # quoted phrase alone can match nothing. Parenthetical semantic qualifiers ("Asthma
+  # (disorder)") are stripped from the bare form because labels never print them; a bare
+  # form under two words is semantically its quoted phrase and is dropped.
+  def render({:or_query, name, original_name, %{variants: variants}}, ctx) do
     terms = query_terms([fetch(ctx, name), fetch(ctx, original_name)])
 
     terms
-    |> Enum.map_join(" OR ", &~s("#{&1}"))
+    |> Enum.flat_map(&query_variants(&1, variants))
+    |> Enum.uniq_by(&String.downcase/1)
+    |> Enum.map_join(" OR ", & &1)
     |> Segment.text()
     |> List.wrap()
   end
@@ -461,6 +480,20 @@ defmodule EdgeLinkouts.Display.Value do
         _ -> []
       end
     end)
+  end
+
+  defp query_variants(term, variants) do
+    quoted = ~s("#{term}")
+
+    bare =
+      if :terms in variants do
+        term
+        |> String.replace(~r/[\(\[][^)\]]*[\)\]]/, " ")
+        |> String.replace(~r/\s+/, " ")
+        |> String.trim()
+      end
+
+    if is_binary(bare) and bare != "" and bare =~ " ", do: [quoted, bare], else: [quoted]
   end
 
   defp query_terms(fields) do
