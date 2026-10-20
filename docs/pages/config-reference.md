@@ -168,6 +168,19 @@ spelling wins). Built for `{:url, ...}` search templates:
 renders the query `"gamma-Hydroxybutyric acid" OR "sodium oxybate"` while the link text stays
 readable.
 
+### `{:or_query, name, original_name, %{variants: [:phrase, :terms]}}`
+
+The same OR group, plus one extra variant per multiword name: after its quoted phrase, the
+bare word-conjunction form (`"blood pressure increased" OR blood pressure increased`).
+DailyMed documents bare multi-word groups as word conjunctions
+(`NAME:(acetaminophen aspirin)` = "containing the words acetaminophen and aspirin"), and a
+conjunction survives reorderings a quoted phrase cannot. Parenthetical semantic qualifiers
+(`"Asthma (disorder)"`) are stripped from the bare form, because labels never print them; a
+bare form under two words adds nothing over its quoted phrase and is dropped. Use `:terms`
+when a source phrase can be longer than any label wording, for example a FAERS indication
+corroborated by a label naming only the general condition. The 3-tuple above stays
+phrase-only; `%{variants: [:phrase]}` is its exact equivalent.
+
 ## Conditions
 
 | condition | true when |
