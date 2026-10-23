@@ -42,10 +42,11 @@ end
 config :edge_linkouts, EdgeLinkoutsWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
-# Web app's slice of the free tier's 1000 RU/s: 15% here, 75% for the CLI (it needs
-# bursts for ingestion), 10% left as headroom for the portal and retries.
+# Web app's slice of the free tier's 1000 RU/s: 10% here, 90% for the CLI during
+# ingestion (RU_BUDGET_CLI). 900 + 100 is the whole tier, so while a load runs the app
+# is at its ceiling and page reads can wait; outside a load it idles far below this.
 config :edge_linkouts,
-  ru_budget_web: String.to_integer(System.get_env("RU_BUDGET_WEB", "150"))
+  ru_budget_web: String.to_integer(System.get_env("RU_BUDGET_WEB", "100"))
 
 # A separate public DEV preview runs a production release with only bundled sample data.
 # This never enables Phoenix's development error pages or needs Cosmos credentials.

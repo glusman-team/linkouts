@@ -47,11 +47,11 @@ credentials are mandatory. A nonempty fixture path that cannot be loaded fails a
 
 ## Budget
 
-The free tier's 1000 RU/s is shared. The CLI gets the burst budget it needs for ingestion,
-750 RU/s by default; the web app gets 150 RU/s (`RU_BUDGET_CLI`, `RU_BUDGET_WEB`), and the
-remaining 10% is headroom for the portal and retries. Crawler defence is a Cloudflare
-rate-limiting rule on the hostname, not the RU budget. Both apps pace themselves using the
-charge Cosmos actually reports, not an estimate.
+The free tier's 1000 RU/s is shared. The CLI paces ingestion at 900 RU/s by default; the
+web app caps itself at 100 RU/s (`RU_BUDGET_CLI`, `RU_BUDGET_WEB`), which together is the
+whole tier, so during a load page reads can wait behind ingest bursts. Crawler defence is
+a Cloudflare rate-limiting rule on the hostname, not the RU budget. Both apps pace
+themselves using the charge Cosmos actually reports, not an estimate.
 
 Measure before you size anything:
 
@@ -123,7 +123,7 @@ the container itself.
    and must never reach the server.
    ```sh
    fly secrets set SECRET_KEY_BASE=... COSMOS_ENDPOINT=... COSMOS_DB=edge_linkouts \
-     COSMOS_CONTAINER=edges COSMOS_READ_ONLY_KEY=... RU_BUDGET_WEB=150 \
+     COSMOS_CONTAINER=edges COSMOS_READ_ONLY_KEY=... RU_BUDGET_WEB=100 \
      PHX_HOST=linkouts.skyelanegoetz.com X_ORIGIN_KEY=...
    ```
    `COSMOS_READ_ONLY_KEY` and `COSMOS_PRIMARY_CONNECTION_STRING_R` are both accepted (the

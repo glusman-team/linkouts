@@ -110,7 +110,7 @@ defmodule EdgeLinkouts.ClusterTwoNodeTest do
     assert_eventually(fn -> Cluster.node_count() == 2 end)
 
     # Per-node budget is the configured total divided by the live node count (direnv sets
-    # RU_BUDGET_WEB=450 locally, fly.toml sets 150 in prod), so derive expectations from
+    # RU_BUDGET_WEB=100 locally, fly.toml sets 100 in prod), so derive expectations from
     # the actual config instead of hardcoding either value.
     total = Application.get_env(:edge_linkouts, :ru_budget_web)
     per_node = div(total, 2)

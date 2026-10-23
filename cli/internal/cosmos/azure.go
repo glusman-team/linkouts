@@ -18,10 +18,14 @@ import (
 	"github.com/glusman-team/linkouts/cli/internal/ratelimit"
 )
 
-// maxSDKRetries is raised above the SDK default of 3 because a bulk load is exactly the
-// workload that hits 429s, and the SDK's backoff already honours x-ms-retry-after-ms
+// maxSDKRetries is raised well above the SDK default of 3 because a bulk load is exactly
+// the workload that hits 429s, and the SDK's backoff already honours x-ms-retry-after-ms
 // (ADR 0002). Retrying here too would double the wait and hide throttling from the budget.
-const maxSDKRetries = 5
+// At the 90%-of-free-tier budget the account keeps only ~10% headroom for the web app, and
+// Cosmos meters per second, so the two workloads collide at second boundaries; the retry
+// budget is what lets a load ride those sub-second spikes out instead of aborting. A
+// genuinely saturated account still fails loudly once the retries are spent.
+const maxSDKRetries = 12
 
 // DropAll re-creates the container after deleting it, and Cosmos can take a moment to release the
 // name. These bound the wait: three tries over roughly six seconds, which is longer than the

@@ -44,15 +44,16 @@ func TestNewWithNonPositiveRateIsUnlimited(t *testing.T) {
 }
 
 func TestTokenBucketPacesSpend(t *testing.T) {
-	// 200 RU/s with a burst of 200: the first 200 RU is free, the next must wait ~1s.
+	// 200 RU/s with a burst of 200, starting empty: the first 200 RU must refill (~1s),
+	// and the next 100 RU half of that.
 	b := New(200)
 	ctx := context.Background()
 	start := time.Now()
 	if err := b.Take(ctx, 200); err != nil {
 		t.Fatalf("first Take: %v", err)
 	}
-	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
-		t.Errorf("the burst should be immediate, took %v", elapsed)
+	if elapsed := time.Since(start); elapsed < 500*time.Millisecond {
+		t.Errorf("the bucket starts empty, so the first 200 RU should wait ~1s, took %v", elapsed)
 	}
 	start = time.Now()
 	if err := b.Take(ctx, 100); err != nil {
@@ -95,12 +96,11 @@ func TestTokenBucketChunksChargesAboveBurst(t *testing.T) {
 }
 
 func TestTakeHonoursContextCancellation(t *testing.T) {
-	b := New(1) // one RU per second: the second charge has to wait a long time
+	// One RU per second, starting empty: even the first charge has to wait ~1s, far past
+	// the deadline.
+	b := New(1)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
 	defer cancel()
-	if err := b.Take(ctx, 1); err != nil {
-		t.Fatalf("first Take: %v", err)
-	}
 	err := b.Take(ctx, 1)
 	if err == nil {
 		t.Fatal("Take did not return when the wait could not fit the context deadline")

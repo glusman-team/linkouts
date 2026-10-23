@@ -228,6 +228,22 @@ smoke-init: build ## [CLOUD] Create db/container on the real account
 smoke-probe: build ## [CLOUD] Measure RU per op with 20 throwaway docs
 	$(BIN) probe --n 20
 
+# MULTIOMICS_KP 3.1.3 lives in ~/data, downloaded from the private HF dataset
+# SkyeAv/multiomics-kp (revision e88bda402bcd8115cae5495210ce71db69ebedb6; sha256s on the
+# dataset card). A full load runs for many hours at RU_BUDGET_CLI. Stopping and resuming
+# is safe at any point: --no-repack skips documents that already carry the version key.
+MULTIOMICS_DIR   ?= $(HOME)/data/multiomics-kp/3.1.3
+MULTIOMICS_KEY   := infores:multiomics-kp-3.1.3
+MULTIOMICS_NODES := $(MULTIOMICS_DIR)/MULTIOMICS_KP_3.1.3.nodes.ndjson
+MULTIOMICS_EDGES := $(MULTIOMICS_DIR)/MULTIOMICS_KP_3.1.3.edges.ndjson
+
+.PHONY: smoke-ingest-multiomics smoke-resume-multiomics
+smoke-ingest-multiomics: build ## [CLOUD] Load MULTIOMICS_KP 3.1.3 into Cosmos (long)
+	$(BIN) load $(MULTIOMICS_KEY) --nodes $(MULTIOMICS_NODES) --edges $(MULTIOMICS_EDGES)
+
+smoke-resume-multiomics: build ## [CLOUD] Resume the multiomics load, skipping stored versions
+	$(BIN) load $(MULTIOMICS_KEY) --nodes $(MULTIOMICS_NODES) --edges $(MULTIOMICS_EDGES) --no-repack
+
 # ---------------------------------------------------------------- housekeeping
 
 # Security advisories (network-touching, CI-only; see the header note).

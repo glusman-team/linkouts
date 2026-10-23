@@ -50,7 +50,7 @@ offline against a file store (--store file:PATH), which is how the tests and CI 
 	pf.StringVar(&g.container, "container", "", "Cosmos container (default $COSMOS_CONTAINER or "+config.DefaultContainer+")")
 	pf.StringVar(&g.engineKind, "engine", envOr("LINKOUTS_ENGINE", "chdb"), "join engine: chdb (embedded ClickHouse) or fake (pure Go)")
 	pf.StringVar(&g.chdbCache, "chdb-cache", "", "chdb extraction dir (default $CHDB_CACHE_DIR)")
-	pf.Float64Var(&g.ruBudget, "ru-budget", 0, "RU/s ceiling (default $RU_BUDGET_CLI or 750)")
+	pf.Float64Var(&g.ruBudget, "ru-budget", 0, "RU/s ceiling (default $RU_BUDGET_CLI or 900)")
 	pf.IntVar(&g.concurrency, "concurrency", 8, "concurrent store operations")
 	pf.BoolVarP(&g.verbose, "verbose", "v", false, "log each step")
 

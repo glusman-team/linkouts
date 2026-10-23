@@ -74,12 +74,19 @@ func New(ruPerSec float64) Budget {
 	if burst < 1 {
 		burst = 1
 	}
-	return &TokenBucket{
+	tb := &TokenBucket{
 		lim:      rate.NewLimiter(rate.Limit(ruPerSec), burst),
 		ruPerSec: ruPerSec,
 		burst:    burst,
 		start:    time.Now(),
 	}
+	// A new limiter carries a full burst, which would dump a whole second of RU into the
+	// first requests of a run; on the shared 1000 RU/s free tier that cold-start burst is
+	// what 429s and aborts the run (observed at 900 RU/s: the burst drains before the first
+	// charge reports back, Cosmos throttles, and five SDK retries land inside the same hot
+	// second). Starting empty paces spend at the refill rate from the very first request.
+	tb.lim.AllowN(time.Now(), burst)
+	return tb
 }
 
 func (b *TokenBucket) Take(ctx context.Context, charge float64) error {

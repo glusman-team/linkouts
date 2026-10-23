@@ -11,10 +11,11 @@ source_up_if_exists
 export COSMOS_DB=edge_linkouts
 export COSMOS_CONTAINER=edges_v2
 
-# --- RU budgets: the CLI gets 75% of the 1000 RU/s free tier (ingestion needs bursts),
-# --- the web app 15%, 10% stays headroom for the portal and retries
-export RU_BUDGET_CLI=750
-export RU_BUDGET_WEB=150
+# --- RU budgets: the free tier is 1000 RU/s. Ingestion is transient, so the CLI
+# --- may pace itself at 90% while a load runs; RU_BUDGET_WEB is the web app's pacing
+# --- ceiling, not a reservation, so during a load the app rides the remaining ~10%.
+export RU_BUDGET_CLI=900
+export RU_BUDGET_WEB=100
 
 # --- Web cache TTLs (edge reads / pool index+pool reads), milliseconds
 export DEDUPE_TTL_MS=30000
