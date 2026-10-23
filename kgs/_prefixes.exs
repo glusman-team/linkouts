@@ -41,6 +41,17 @@
     "PMID" => "https://pubmed.ncbi.nlm.nih.gov/$value/",
     "PMC" => "https://www.ncbi.nlm.nih.gov/pmc/articles/$value/",
     "DOI" => "https://doi.org/$value",
+    # Model-organism and gene resources the Multiomics KP nodes resolve to. All verified to
+    # resolve for a real id (2026-10-22); PANTHER and OMIM 403 for non-browser agents but
+    # load fine for a human, which is what a linkout is for.
+    "NCBIGene" => "https://www.ncbi.nlm.nih.gov/gene/$value",
+    "MGI" => "http://www.informatics.jax.org/marker/MGI:$value",
+    "RGD" => "https://rgd.mcw.edu/rgdweb/report/gene/main.html?id=$value",
+    "ZFIN" => "https://zfin.org/$value",
+    "HGNC" => "https://www.genenames.org/data/gene-symbol-report/#!/hgnc_id/$curie",
+    "GTOPDB" => "https://www.guidetopharmacology.org/GRAC/ObjectDisplayForward?objectId=$value",
+    "PANTHER.FAMILY" => "http://www.pantherdb.org/panther/family.do?clsAccession=$value",
+    "OMIM" => "https://omim.org/entry/$value",
     # DailyMed SPL ids arrive as "dailymed:<uuid>" in the drug approvals KG.
     "DAILYMED" => "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=$value",
     # DrugBank drug ids arrive on DAKP edges whose subject the node join named from DrugBank.
