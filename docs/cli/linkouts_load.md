@@ -28,17 +28,19 @@ linkouts load <kg-version-key> [flags]
 ### Options
 
 ```
-      --base string       version key to diff against (default: newest stored)
-      --dict string       trained zstd dictionary to compress with
-      --dry-run           do everything except touch the store
-      --edges string      path to KGX edges.ndjson (required)
-  -h, --help              help for load
-      --no-repack         skip documents that already carry this key
-      --nodes string      path to KGX nodes.ndjson (required)
-      --progress          print progress lines to stderr (default true)
-      --sample-size int   ids to reservoir-sample for /random (0 disables) (default 1024)
-      --threads int       ClickHouse max_threads (default: NumCPU)
-      --zstd-level int    zstd compression level (default: 3 without a dictionary, 19 with one; dict frames are written once and read forever, so the high level is worth it)
+      --base string           version key to diff against (default: newest stored)
+      --dict string           trained zstd dictionary to compress with
+      --dry-run               do everything except touch the store
+      --edges string          path to KGX edges.ndjson (required)
+  -h, --help                  help for load
+      --ids string            newline-delimited edge id file: store only these edges (resume a verified gap)
+      --no-repack             skip documents that already carry this key
+      --nodes string          path to KGX nodes.ndjson (required)
+      --progress              print progress lines to stderr (default true)
+      --sample-full-release   with --ids, sample the /random pool from every edge in the file, not only the ones stored this run
+      --sample-size int       ids to reservoir-sample for /random (0 disables) (default 1024)
+      --threads int           ClickHouse max_threads (default: NumCPU)
+      --zstd-level int        zstd compression level (default: 3 without a dictionary, 19 with one; dict frames are written once and read forever, so the high level is worth it)
 ```
 
 ### Options inherited from parent commands
@@ -49,7 +51,7 @@ linkouts load <kg-version-key> [flags]
       --container string    Cosmos container (default $COSMOS_CONTAINER or edges)
       --db string           Cosmos database (default $COSMOS_DB or edge_linkouts)
       --engine string       join engine: chdb (embedded ClickHouse) or fake (pure Go) (default "chdb")
-      --ru-budget float     RU/s ceiling (default $RU_BUDGET_CLI or 750)
+      --ru-budget float     RU/s ceiling (default $RU_BUDGET_CLI or 900)
       --store string        storage backend: cosmos, file:PATH, or mem:// (default "cosmos")
   -v, --verbose             log each step
 ```

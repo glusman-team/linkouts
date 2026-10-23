@@ -19,7 +19,7 @@ offline against a file store (--store file:PATH), which is how the tests and CI 
       --db string           Cosmos database (default $COSMOS_DB or edge_linkouts)
       --engine string       join engine: chdb (embedded ClickHouse) or fake (pure Go) (default "chdb")
   -h, --help                help for linkouts
-      --ru-budget float     RU/s ceiling (default $RU_BUDGET_CLI or 750)
+      --ru-budget float     RU/s ceiling (default $RU_BUDGET_CLI or 900)
       --store string        storage backend: cosmos, file:PATH, or mem:// (default "cosmos")
   -v, --verbose             log each step
 ```

@@ -5,9 +5,13 @@
 package pipeline
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,7 +40,25 @@ const (
 	// maxPreconditionRetries bounds the read-modify-write loop. Two CLI runs writing the same
 	// edge concurrently is rare; looping forever on a hot document is worse than failing.
 	maxPreconditionRetries = 3
+	// maxThrottleRetries bounds the pipeline-level retry of a store call whose 429 outlasted
+	// the SDK's own retries. The free-tier account is shared with the web app and Cosmos
+	// meters RU per second, so second-boundary collisions are routine; aborting the run
+	// instead would force a tail load to repay the whole filtered-prefix scan on restart.
+	// Forty attempts of capped exponential backoff is roughly ten minutes per edge, long
+	// enough to ride out real contention and short enough that a saturated account still
+	// fails loudly.
+	maxThrottleRetries = 40
 )
+
+// throttleBaseDelay seeds the throttle backoff; a var so tests can shrink it.
+var throttleBaseDelay = 500 * time.Millisecond
+
+// throttleBackoff grows exponentially from throttleBaseDelay, capped at 32x, with up to 25%
+// jitter so sixteen workers do not wake from a collision in lockstep.
+func throttleBackoff(attempt int) time.Duration {
+	d := throttleBaseDelay << min(attempt, 5)
+	return d + time.Duration(rand.Int63n(int64(d/4)+1))
+}
 
 // Options configures one load.
 type Options struct {
@@ -64,6 +86,18 @@ type Options struct {
 	// never re-encodes a blob just to change dictionary or level. Use it to resume a
 	// partially completed load without paying to rewrite what already landed.
 	NoRepack bool
+
+	// IDsPath limits the load to the edges whose ids appear in this newline-delimited file:
+	// the precise tail of a verified gap, so a resume pays nothing for the millions of edges
+	// that are already stored. The engine still joins the whole file; excluded edges are
+	// dropped before the store, so they cost no requests, no RU, and no pool slots.
+	IDsPath string
+	// SampleFullRelease offers every edge in the file to the /random reservoir, not only the
+	// ones this run stores. It exists for an IDsPath tail run: the release's earlier bulk
+	// load died before writing its pool, so the only run that finishes must sample for the
+	// whole release or /random would draw only from the tail. The pool is written only on a
+	// fully successful run, and a fully successful tail run means every file edge is stored.
+	SampleFullRelease bool
 
 	Concurrency int
 	// SampleSize is the /random reservoir cap. Zero disables sampling.
@@ -109,6 +143,9 @@ func (o *Options) normalize() error {
 	if o.NodesPath == "" || o.EdgesPath == "" {
 		return errors.New("both --nodes and --edges are required")
 	}
+	if o.SampleFullRelease && o.IDsPath == "" {
+		return errors.New("--sample-full-release only means something together with --ids")
+	}
 	if o.Budget == nil {
 		o.Budget = ratelimit.NewUnlimited()
 	}
@@ -142,6 +179,13 @@ type Stats struct {
 	Merged  int
 	Skipped int
 	Failed  int
+	// Filtered counts rows dropped by an --ids filter. On a tail load the filter swallows
+	// the whole already-stored prefix, and without this counter the run looks wedged for
+	// the twenty-plus minutes the join takes to reach the gap: zero edges, no progress.
+	Filtered int
+	// Throttled counts store calls that came back as a 429 which outlasted the SDK's own
+	// retries and had to be backed off and retried here.
+	Throttled int
 	// Versions is how many versions the touched documents now hold in total.
 	Versions int
 	// RawBytes is canonical JSON size before compression; BlobBytes is base64 after.
@@ -175,6 +219,8 @@ func (s *Stats) Snapshot() Snapshot {
 		Merged:    s.Merged,
 		Skipped:   s.Skipped,
 		Failed:    s.Failed,
+		Filtered:  s.Filtered,
+		Throttled: s.Throttled,
 		Versions:  s.Versions,
 		RawBytes:  s.RawBytes,
 		BlobBytes: s.BlobBytes,
@@ -190,13 +236,19 @@ func (s *Stats) Snapshot() Snapshot {
 
 // Snapshot is a point-in-time copy of the run counters.
 type Snapshot struct {
-	Key       string
-	Elapsed   time.Duration
-	Edges     int
-	Created   int
-	Merged    int
-	Skipped   int
-	Failed    int
+	Key     string
+	Elapsed time.Duration
+	Edges   int
+	Created int
+	Merged  int
+	Skipped int
+	// Filtered counts rows dropped by an --ids filter. On a tail load the filter swallows
+	// the whole already-stored prefix, and without this counter the run looks wedged for
+	// the twenty-plus minutes the join takes to reach the gap: zero edges, no progress.
+	Filtered int
+	Failed   int
+	// Throttled counts store calls retried after a 429 outlasted the SDK's retries.
+	Throttled int
 	Versions  int
 	RawBytes  int64
 	BlobBytes int64
@@ -255,6 +307,19 @@ func Load(ctx context.Context, o Options) (*Stats, error) {
 	rows := make(chan engine.Row, queueDepth)
 	g, gctx := errgroup.WithContext(ctx)
 
+	// idFilter, when set, is the verified gap: every edge outside it is already stored and
+	// is dropped here, before the channel, so no worker ever pays a request for it.
+	var idFilter map[string]struct{}
+	if o.IDsPath != "" {
+		var err error
+		idFilter, err = loadIDSet(o.IDsPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	reporter := newReporter(o.Progress, st, func() float64 { return o.Budget.Consumed() })
+
 	g.Go(func() error {
 		defer close(rows)
 		return o.Engine.Join(gctx, engine.Query{
@@ -262,6 +327,19 @@ func Load(ctx context.Context, o Options) (*Stats, error) {
 			EdgesPath: o.EdgesPath,
 			Threads:   o.Threads,
 		}, func(r engine.Row) error {
+			if o.SampleFullRelease && st.sampler != nil {
+				st.sampler.offer(r.ID)
+			}
+			if idFilter != nil {
+				if _, keep := idFilter[r.ID]; !keep {
+					st.bump(func() { st.Filtered++ })
+					// The reporter is poked per processed document in the worker loop, which an
+					// --ids filter starves: poke it here too, or a tail load prints nothing
+					// until the join reaches the gap.
+					reporter.maybe(gctx)
+					return nil
+				}
+			}
 			select {
 			case rows <- r:
 				return nil
@@ -271,7 +349,6 @@ func Load(ctx context.Context, o Options) (*Stats, error) {
 		})
 	})
 
-	reporter := newReporter(o.Progress, st, func() float64 { return o.Budget.Consumed() })
 	for range o.Concurrency {
 		g.Go(func() error {
 			for {
@@ -338,7 +415,10 @@ func process(ctx context.Context, o *Options, st *Stats, r engine.Row) error {
 		st.RawBytes += int64(len(raw))
 		st.BlobBytes += int64(len(encoded))
 	})
-	if st.sampler != nil {
+	// With SampleFullRelease the reservoir was offered every edge in the emit wrapper, so
+	// the pool can cover the whole release; offering again here would double the tail's
+	// weight and bias /random toward exactly the edges this run stored.
+	if st.sampler != nil && !o.SampleFullRelease {
 		st.sampler.offer(r.ID)
 	}
 	if o.DryRun {
@@ -347,16 +427,33 @@ func process(ctx context.Context, o *Options, st *Stats, r engine.Row) error {
 	}
 
 	// Create first: on a fresh load this is one request per edge instead of a read plus a
-	// write, and a 409 is the signal that this edge already has versions to merge into.
-	err = o.Store.Create(ctx, cosmos.Doc{ID: r.ID, Blob: encoded, DictID: o.dictID(), KG: o.slug})
-	switch {
-	case err == nil:
-		st.bump(func() { st.Created++; st.Versions++ })
-		return nil
-	case !errors.Is(err, cosmos.ErrConflict):
-		return fmt.Errorf("create: %w", err)
+	// write, and a 409 is the signal that this edge already has versions to merge into. The
+	// whole store phase retries on ErrThrottled: the retry is safe because Create is
+	// idempotent (a response lost after a server-side success comes back 409 and routes into
+	// merge) and merge already re-reads on an etag mismatch.
+	for attempt := 0; ; attempt++ {
+		err = o.Store.Create(ctx, cosmos.Doc{ID: r.ID, Blob: encoded, DictID: o.dictID(), KG: o.slug})
+		switch {
+		case err == nil:
+			st.bump(func() { st.Created++; st.Versions++ })
+			return nil
+		case errors.Is(err, cosmos.ErrConflict):
+			if err = merge(ctx, o, st, r.ID, doc); err == nil {
+				return nil
+			}
+		default:
+			err = fmt.Errorf("create: %w", err)
+		}
+		if !cosmos.IsThrottled(err) || attempt >= maxThrottleRetries {
+			return err
+		}
+		st.bump(func() { st.Throttled++ })
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(throttleBackoff(attempt)):
+		}
 	}
-	return merge(ctx, o, st, r.ID, doc)
 }
 
 // merge adds this run's version to an existing document. It re-reads on an etag mismatch,
@@ -458,6 +555,34 @@ func (o *Options) now() time.Time {
 		return o.Now()
 	}
 	return time.Now()
+}
+
+// loadIDSet reads a newline-delimited id file into a membership set. Blank lines and
+// surrounding whitespace are ignored; a file with no ids at all is almost certainly the
+// wrong path, and an id that is simply absent from the edges file is dropped silently by
+// the filter, which is the right behaviour when the file was cut from verified data.
+func loadIDSet(path string) (map[string]struct{}, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open id file %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+	set := map[string]struct{}{}
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<20), 1<<20)
+	for sc.Scan() {
+		id := strings.TrimSpace(sc.Text())
+		if id != "" {
+			set[id] = struct{}{}
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("read id file %s: %w", path, err)
+	}
+	if len(set) == 0 {
+		return nil, fmt.Errorf("id file %s contains no ids", path)
+	}
+	return set, nil
 }
 
 // writePool stores this release's reservoir of edge ids at its own reserved document, then

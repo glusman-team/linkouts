@@ -52,7 +52,7 @@ What happens:
    reads one pool and picks from it. Neither issues a query, which the container could not
    answer cheaply.
 
-Writes are paced to the RU budget (`--ru-budget`, default 750 RU/s) using the actual charge Cosmos
+Writes are paced to the RU budget (`--ru-budget`, default 900 RU/s) using the actual charge Cosmos
 reports, so a load shares the free tier with the running web app instead of starving it.
 
 ## Useful flags
@@ -63,6 +63,26 @@ reports, so a load shares the free tier with the running web app instead of star
   that controls pool storage: a pool is the only document that grows with the number of edges,
   and it stops growing at this cap.
 - `--dict`: compress with a trained dictionary. See below.
+
+## Resuming an interrupted load
+
+A load stopped at any point (Ctrl-C, suspend, crash, or a raised `--ru-budget` that
+needs a restart) picks up where it left off: rerun the same `load` command with
+`--no-repack`, and every document that already carries the version key is skipped.
+Writes are create-first with an etag precondition, so a half-written batch cannot
+corrupt stored versions; at worst the last in-flight documents are redone. The
+Makefile wraps the pair for the multiomics release:
+`make smoke-ingest-multiomics` / `make smoke-resume-multiomics`.
+
+Throttling is not an interruption: on the shared free-tier account a 429 that outlasts
+the SDK's own retries is backed off and retried by the pipeline (up to about ten minutes
+per edge) instead of aborting the run, and progress lines count these as `throttled=`.
+A restart that lands far into a big load pays one create-plus-read per already-stored
+edge, which is hours on a multi-million-edge release. When the gap is known exactly,
+`--ids missing.ids` stores only the listed edges (no requests for anything else), and
+`--sample-full-release` rebuilds the `/random` pool for the whole release from the one
+run that finishes. The missing set itself comes from the change feed: one pass over the
+container at ~0.1 RU per document diffs stored ids against the release file.
 
 ## Dictionaries
 

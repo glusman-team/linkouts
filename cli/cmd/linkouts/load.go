@@ -15,18 +15,20 @@ import (
 )
 
 type loadFlags struct {
-	nodes      string
-	edges      string
-	base       string
-	dict       string
-	zstdLevel  int
-	noRepack   bool
-	dryRun     bool
-	sampleSize int
-	sampleSeed int64
-	sampledAt  string
-	threads    int
-	progress   bool
+	nodes             string
+	edges             string
+	base              string
+	dict              string
+	zstdLevel         int
+	noRepack          bool
+	ids               string
+	sampleFullRelease bool
+	dryRun            bool
+	sampleSize        int
+	sampleSeed        int64
+	sampledAt         string
+	threads           int
+	progress          bool
 }
 
 func newLoadCmd(g *globals) *cobra.Command {
@@ -65,6 +67,10 @@ smaller, and the document is replaced under an etag precondition.`,
 	cmd.Flags().IntVar(&f.zstdLevel, "zstd-level", 0,
 		"zstd compression level (default: 3 without a dictionary, 19 with one; dict frames are written once and read forever, so the high level is worth it)")
 	cmd.Flags().BoolVar(&f.noRepack, "no-repack", false, "skip documents that already carry this key")
+	cmd.Flags().StringVar(&f.ids, "ids", "",
+		"newline-delimited edge id file: store only these edges (resume a verified gap)")
+	cmd.Flags().BoolVar(&f.sampleFullRelease, "sample-full-release", false,
+		"with --ids, sample the /random pool from every edge in the file, not only the ones stored this run")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "do everything except touch the store")
 	cmd.Flags().IntVar(&f.sampleSize, "sample-size", pipeline.DefaultSampleSize, "ids to reservoir-sample for /random (0 disables)")
 	cmd.Flags().IntVar(&f.threads, "threads", 0, "ClickHouse max_threads (default: NumCPU)")
@@ -114,22 +120,24 @@ func runLoad(ctx context.Context, g *globals, key string, f *loadFlags) (err err
 		now = func() time.Time { return at }
 	}
 	opt := pipeline.Options{
-		Now:         now,
-		Key:         key,
-		BaseKey:     f.base,
-		NodesPath:   f.nodes,
-		EdgesPath:   f.edges,
-		Store:       store,
-		Engine:      eng,
-		Budget:      budget,
-		Dict:        dict,
-		ZstdLevel:   f.zstdLevel,
-		DryRun:      f.dryRun,
-		NoRepack:    f.noRepack,
-		Concurrency: g.concurrency,
-		SampleSize:  f.sampleSize,
-		SampleSeed:  f.sampleSeed,
-		Threads:     f.threads,
+		Now:               now,
+		Key:               key,
+		BaseKey:           f.base,
+		NodesPath:         f.nodes,
+		EdgesPath:         f.edges,
+		Store:             store,
+		Engine:            eng,
+		Budget:            budget,
+		Dict:              dict,
+		ZstdLevel:         f.zstdLevel,
+		DryRun:            f.dryRun,
+		NoRepack:          f.noRepack,
+		IDsPath:           f.ids,
+		SampleFullRelease: f.sampleFullRelease,
+		Concurrency:       g.concurrency,
+		SampleSize:        f.sampleSize,
+		SampleSeed:        f.sampleSeed,
+		Threads:           f.threads,
 	}
 	if f.progress {
 		opt.Progress = pipeline.NewTextProgress(os.Stderr, 0)

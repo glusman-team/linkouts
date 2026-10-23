@@ -2,8 +2,10 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -221,6 +223,187 @@ func TestReloadSameKeyIsIdempotent(t *testing.T) {
 		if n := len(decode(t, d, nil).Versions); n != 1 {
 			t.Errorf("%s holds %d versions after reloading the same key, want 1", id, n)
 		}
+	}
+}
+
+// readFixture returns the fixture edge ids, one per line, in file order.
+func readFixture(t *testing.T) string {
+	t.Helper()
+	_, edges := fixtures(t)
+	b, err := os.ReadFile(edges)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]string, 0, 6)
+	for _, l := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+		var d struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal([]byte(l), &d); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, d.ID)
+	}
+	return strings.Join(out, "\n")
+}
+
+// An --ids run stores only the listed edges: no requests for the excluded ones, and the
+// pool and index describe exactly what this run stored.
+func TestLoadWithIDFilterStoresOnlyListedEdges(t *testing.T) {
+	store := cosmos.NewFake(nil)
+	ctx := context.Background()
+
+	// The first three fixture edge ids, one per line, exactly the shape a verified-gap
+	// file has. One unknown id rides along: the filter must ignore ids the file lacks.
+	edges := [3]string{}
+	for i, l := range strings.Split(strings.TrimRight(readFixture(t), "\n"), "\n") {
+		if i < 3 {
+			edges[i] = l
+		}
+	}
+	idsFile := filepath.Join(t.TempDir(), "missing.ids")
+	if err := os.WriteFile(idsFile, []byte(edges[0]+"\n"+edges[1]+"\n"+"not-in-the-file-at-all\n\n"+edges[2]+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	opt := baseOptions(t, store)
+	opt.IDsPath = idsFile
+	opt.SampleSize = 4
+	stats, err := Load(ctx, opt)
+	if err != nil {
+		t.Fatalf("Load --ids: %v", err)
+	}
+	if stats.Edges != 3 || stats.Created != 3 {
+		t.Errorf("edges=%d created=%d, want 3/3: the id filter must drop the other 3 fixture edges", stats.Edges, stats.Created)
+	}
+	stored := 0
+	for id, d := range store.Docs() {
+		if !cosmos.IsReservedID(id) {
+			stored++
+			_ = d
+		}
+	}
+	if stored != 3 {
+		t.Errorf("%d edge documents stored, want 3", stored)
+	}
+	if got := store.OpCounts()["create"]; got != 3 {
+		t.Errorf("create calls = %d, want 3: excluded edges must cost no request", got)
+	}
+	pool := readPool(t, store, nil, slugV, "1.11.2")
+	if len(pool.IDs) != 3 {
+		t.Errorf("pool holds %d ids, want the 3 stored", len(pool.IDs))
+	}
+	index := readIndex(t, store, nil)
+	if rel := index.KGs[slugV].Versions["1.11.2"]; rel.Edges != 3 {
+		t.Errorf("index says %d edges, want 3", rel.Edges)
+	}
+}
+
+// --sample-full-release flips the reservoir to the whole file, so the tail run of an
+// interrupted bulk load still leaves /random sampling the entire release.
+func TestLoadWithIDFilterCanSampleFullRelease(t *testing.T) {
+	store := cosmos.NewFake(nil)
+	ctx := context.Background()
+	idsFile := filepath.Join(t.TempDir(), "missing.ids")
+	first := ""
+	for i, l := range strings.Split(strings.TrimRight(readFixture(t), "\n"), "\n") {
+		if i == 0 {
+			first = l
+			break
+		}
+	}
+	if err := os.WriteFile(idsFile, []byte(first+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	opt := baseOptions(t, store)
+	opt.IDsPath = idsFile
+	opt.SampleFullRelease = true
+	opt.SampleSize = 4
+	stats, err := Load(ctx, opt)
+	if err != nil {
+		t.Fatalf("Load --ids --sample-full-release: %v", err)
+	}
+	if stats.Edges != 1 || stats.Created != 1 {
+		t.Errorf("edges=%d created=%d, want 1/1", stats.Edges, stats.Created)
+	}
+	index := readIndex(t, store, nil)
+	rel := index.KGs[slugV].Versions["1.11.2"]
+	if rel.Edges != 6 {
+		t.Errorf("index says %d edges, want the release's 6", rel.Edges)
+	}
+	pool := readPool(t, store, nil, slugV, "1.11.2")
+	if len(pool.IDs) != 4 {
+		t.Errorf("pool holds %d ids, want the cap of 4", len(pool.IDs))
+	}
+	// The reservoir must be able to hold ids this run never stored.
+	stored := map[string]bool{}
+	for id := range store.Docs() {
+		stored[id] = true
+	}
+	sampledStored := 0
+	for _, id := range pool.IDs {
+		if stored[id] {
+			sampledStored++
+		}
+	}
+	t.Logf("pool: %d of %d sampled ids were stored this run (expect ~4/6)", sampledStored, len(pool.IDs))
+}
+
+// The flags guard their own combination: --sample-full-release without --ids is a
+// misunderstanding, not a configuration.
+func TestSampleFullReleaseRequiresIDsPath(t *testing.T) {
+	opt := baseOptions(t, cosmos.NewFake(nil))
+	opt.SampleFullRelease = true
+	if _, err := Load(context.Background(), opt); err == nil {
+		t.Fatal("--sample-full-release without --ids was accepted")
+	}
+}
+
+// A 429 that outlasts the SDK's retries is routine on the shared free-tier account, so the
+// pipeline backs off and retries instead of aborting a multi-hour load.
+func TestLoadRetriesThrottledStoreCalls(t *testing.T) {
+	store := cosmos.NewFake(nil)
+	old := throttleBaseDelay
+	throttleBaseDelay = time.Millisecond
+	defer func() { throttleBaseDelay = old }()
+
+	store.Fail("create", fmt.Errorf("429: %w", cosmos.ErrThrottled))
+	stats, err := Load(context.Background(), baseOptions(t, store))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if stats.Throttled != 1 {
+		t.Errorf("throttled=%d, want 1: the armed 429 should be retried exactly once", stats.Throttled)
+	}
+	if stats.Created != 6 {
+		t.Errorf("created=%d, want 6", stats.Created)
+	}
+}
+
+// alwaysThrottled fails every create with ErrThrottled, which the Fake's one-shot Fail
+// cannot express.
+type alwaysThrottled struct {
+	cosmos.Store
+}
+
+func (alwaysThrottled) Create(context.Context, cosmos.Doc) error {
+	return fmt.Errorf("429: %w", cosmos.ErrThrottled)
+}
+
+// The retry budget is bounded: a genuinely saturated account fails loudly rather than
+// hanging the load forever.
+func TestLoadGivesUpWhenThrottleOutlastsRetries(t *testing.T) {
+	old := throttleBaseDelay
+	throttleBaseDelay = time.Millisecond
+	defer func() { throttleBaseDelay = old }()
+
+	_, err := Load(context.Background(), baseOptions(t, alwaysThrottled{cosmos.NewFake(nil)}))
+	if err == nil {
+		t.Fatal("a store that only ever throttles was tolerated")
+	}
+	if !cosmos.IsThrottled(err) {
+		t.Errorf("error %v should still read as throttled", err)
 	}
 }
 

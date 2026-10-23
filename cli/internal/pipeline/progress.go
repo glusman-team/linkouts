@@ -53,6 +53,15 @@ func (p *TextProgress) Report(s Snapshot, final bool) {
 	rate := s.Rate()
 	line := fmt.Sprintf("%s %s: %d edges (%.0f/s) created=%d merged=%d skipped=%d failed=%d ru=%.1f",
 		time.Now().Format("15:04:05"), s.Key, s.Edges, rate, s.Created, s.Merged, s.Skipped, s.Failed, s.RU)
+	// On an --ids tail load the filter swallows the already-stored prefix, so filtered is
+	// the only number that moves while the join walks to the gap; without it the run looks
+	// wedged for tens of minutes.
+	if s.Filtered > 0 {
+		line += fmt.Sprintf(" filtered=%d", s.Filtered)
+	}
+	if s.Throttled > 0 {
+		line += fmt.Sprintf(" throttled=%d", s.Throttled)
+	}
 	if p.Total > 0 {
 		pct := 100 * float64(s.Edges) / float64(p.Total)
 		line += fmt.Sprintf(" %.1f%%", pct)
