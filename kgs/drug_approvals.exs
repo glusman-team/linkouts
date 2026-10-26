@@ -137,6 +137,32 @@
     # sits, the way the legacy page kept its labelled lines to a row each.
     "approvals" => {:list, "regulatory_approvals", {:link, "self", "self"}, ", ", 3},
 
+    # Species context (from release 1.25.0): DAKP resolves the taxon itself, so the original_
+    # log line repeats the CURIE and the readable phrase is the resolved name logged as
+    # species_context_qualifier_name — a binomial with the common name in parentheses
+    # ("Equus caballus (horse)", the organismtaxon.txt 2026jul22 wording, verified over all
+    # eleven taxa in 1.25.1). The binomial is a label, not a phrase a reader says, so each
+    # name rewords to the common plural the sentence needs: "... has been approved for
+    # treating Insomnia, in horses." Cattle and sheep plural as themselves. A name the map
+    # does not list renders verbatim rather than disappearing, and a release without the
+    # name line falls back to the linked CURIE chip.
+    "species_qualifier_link" => {:link, "species_context_qualifier", "species_context_qualifier"},
+    "qualifier_species" =>
+      {:if, [{:present, "species_context_qualifier"}],
+       {:supporting, "species_context_qualifier_name", ", in ", "", %{
+         "homo sapiens (human)" => "humans",
+         "canis lupus familiaris (dog)" => "dogs",
+         "felis catus (domestic cat)" => "cats",
+         "equus caballus (horse)" => "horses",
+         "sus scrofa (pig)" => "pigs",
+         "bos taurus (domestic cattle)" => "cattle",
+         "capra hircus (goat)" => "goats",
+         "ovis aries (sheep)" => "sheep",
+         "oryctolagus cuniculus (rabbit)" => "rabbits",
+         "gallus gallus (chicken)" => "chickens",
+         "meleagris gallopavo (turkey)" => "turkeys"
+       }, ", in {species_qualifier_link}"}},
+
     # Inside a {:list, ...} element "self" is the element itself, so {:local, "self"} is the
     # element's id past its prefix — the exact SPL set id, shown and linked, where the legacy
     # page printed numbered links into DailyMed.
@@ -220,7 +246,7 @@
   asserts: "{kp} asserts",
   title: "{subject_name} and {object_name}",
   edge:
-    "{subject} {relation} {object}{context}{qualifier_anatomical}{qualifier_frequency}{qualifier_population}{qualifier_sex}{qualifier_temporal}.",
+    "{subject} {relation} {object}{context}{qualifier_species}{qualifier_anatomical}{qualifier_frequency}{qualifier_population}{qualifier_sex}{qualifier_temporal}.",
 
   # Methods retain how the statement was produced, without repeating the headline.
   relationship: nil,

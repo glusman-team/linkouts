@@ -106,7 +106,7 @@ provenance of this statement is not recorded."
 
 ### Qualifiers
 
-The five qualifier slots (`qualifier_anatomical`, `qualifier_frequency`,
+The six qualifier slots (`qualifier_species`, `qualifier_anatomical`, `qualifier_frequency`,
 `qualifier_population`, `qualifier_sex`, `qualifier_temporal`) each prefer the readable phrase
 the source logged in `supporting_text` (`original_anatomical_context_qualifier: knee joint`),
 framed so the sentence flows ("...leg, in the knee joint, ..."). A rewording map repairs
@@ -114,6 +114,11 @@ fragments that would read badly in prose ("dosage" becomes "at the labeled dosag
 becomes "adults"). Where the log line is missing the slot falls back to a labelled CURIE chip
 (", frequency UMLS:2"), because a chip identifies without pretending to read. The gates are on
 the qualifier's presence, not the version, so any KG that populates these fields renders them.
+
+`qualifier_species` reads the resolved organism name the source logged under
+`species_context_qualifier_name` ("Homo sapiens (human)") rather than the `original_` line,
+which for species repeats the CURIE; the evidence panel adds the mapping sentence
+"This assertion is about Bos taurus (domestic cattle)." when the name is present.
 
 The disease-context clause (`context`) renders " in the context of {name}" through a link, and
 is gated on the *name* field: a present CURIE with no name would otherwise print an empty

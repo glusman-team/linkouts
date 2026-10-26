@@ -71,7 +71,10 @@
        {:names, "original_temporal_context_qualifier", "The original temporal context qualifier ",
         " mapped to {temporal_context_qualifier_id}"}},
     "temporal_context_qualifier_id" => {:link, "temporal_context_qualifier", "temporal_context_qualifier"},
-    "qualifier_mappings" => {:compound, ["{mapping_disease_context_qualifier}", "{mapping_anatomical_context_qualifier}", "{mapping_frequency_qualifier}", "{mapping_population_context_qualifier}", "{mapping_sex_qualifier}", "{mapping_temporal_context_qualifier}"]},
+    "mapping_species_context_qualifier" =>
+      {:if, [{:present, "species_context_qualifier"}],
+       {:supporting, "species_context_qualifier_name", "This assertion is about ", ".", %{}, ""}},
+    "qualifier_mappings" => {:compound, ["{mapping_species_context_qualifier}", "{mapping_disease_context_qualifier}", "{mapping_anatomical_context_qualifier}", "{mapping_frequency_qualifier}", "{mapping_population_context_qualifier}", "{mapping_sex_qualifier}", "{mapping_temporal_context_qualifier}"]},
 
     # The predicate reads as words ("biolink:treats" -> "treats"); a KG config overrides this
     # with per-predicate prose where the generic verb is not the claim a reader should see.
@@ -205,6 +208,17 @@
     "temporal_qualifier_link" =>
       {:link, "temporal_context_qualifier", "temporal_context_qualifier"},
 
+    # Species context: unlike the qualifiers above, the original_ log line repeats the CURIE
+    # (the source resolved the taxon itself), so the readable phrase is the resolved name the
+    # source logged as species_context_qualifier_name ("Bos taurus (domestic cattle)"). The
+    # raw name renders as-is here; a KG config can reword binomials into the common plural
+    # ("in humans", "in horses") the way DrugApprovals does. The CURIE chip stays the fallback.
+    "species_qualifier_link" => {:link, "species_context_qualifier", "species_context_qualifier"},
+    "qualifier_species" =>
+      {:if, [{:present, "species_context_qualifier"}],
+       {:supporting, "species_context_qualifier_name", ", in ", "", %{},
+        ", in {species_qualifier_link}"}},
+
     # The disease-context qualifier renders only when a displayable name exists — a present
     # CURIE with no name would print " in the context of " with nothing after it.
     "context" =>
@@ -226,13 +240,13 @@
   },
   title: "{subject_display} and {object_display}",
   edge:
-    "This relationship states that {subject_display} {relation} {object_display}{context}{qualifier_anatomical}{qualifier_frequency}{qualifier_population}{qualifier_sex}{qualifier_temporal}.",
+    "This relationship states that {subject_display} {relation} {object_display}{context}{qualifier_species}{qualifier_anatomical}{qualifier_frequency}{qualifier_population}{qualifier_sex}{qualifier_temporal}.",
 
   # Same shape as the DrugApprovals page: the claim with categories inline, then the
   # provenance. A plain string, not a heredoc — the closing newline would print as a blank
   # line under white-space: pre-line.
   relationship:
-    "{subject_display}{subject_kind_clause} {relation} {object_display}{object_kind_clause}{context}{qualifier_anatomical}{qualifier_frequency}{qualifier_population}{qualifier_sex}{qualifier_temporal}. " <>
+    "{subject_display}{subject_kind_clause} {relation} {object_display}{object_kind_clause}{context}{qualifier_species}{qualifier_anatomical}{qualifier_frequency}{qualifier_population}{qualifier_sex}{qualifier_temporal}. " <>
       "{provenance}",
 
   # The one sentence every KGX dump with sources supports; a KG config appends its own
