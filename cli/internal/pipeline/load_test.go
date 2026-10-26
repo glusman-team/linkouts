@@ -452,6 +452,93 @@ func (i *indexReadThrottle) Read(ctx context.Context, id string) (cosmos.Doc, er
 	return i.Store.Read(ctx, id)
 }
 
+// shippedDict returns the DAKP dictionary this repo ships to the web app, so tests exercise
+// real dictionary-compressed documents instead of skipping when the fixtures are too small to
+// train one. Skips (rather than fails) in a checkout without web/, which only happens outside
+// this monorepo.
+func shippedDict(t *testing.T) []byte {
+	t.Helper()
+	b, err := os.ReadFile("../../../web/priv/zstd/drugapprovals-kp.77140996.dict")
+	if err != nil {
+		t.Skipf("shipped dictionary not readable: %v", err)
+	}
+	return b
+}
+
+// Reserved documents (the index, the pools) are shared across graphs, so they are written
+// WITHOUT a dictionary and stay readable by any load regardless of the --dict it compresses
+// its own edges with; an index a run cannot decode is a loud failure, never a silent fresh
+// index. Both halves of that contract are the same bug seen from two sides: a dict-carrying
+// load once silently clobbered a dict-free index, and a dict-free load once silently clobbered
+// a dict-written one.
+func TestReservedDocumentsStayDictionaryFreeAndPreserved(t *testing.T) {
+	dict := shippedDict(t)
+	store := cosmos.NewFake(nil)
+	ctx := context.Background()
+
+	// Seed an index as a no-dictionary run of another graph would have left it.
+	seeded := codec.PoolIndex{Schema: codec.PoolIndexSchema, KGs: map[string]codec.KGPool{
+		"other-kp": {Versions: map[string]codec.VersionPool{"1.0.0": {Edges: 5, Sampled: 5}}},
+	}}
+	blob, err := codec.EncodeJSON(seeded, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Seed(cosmos.Doc{ID: cosmos.RandomPoolID, Blob: blob})
+
+	// A load carrying a dictionary must preserve that index entry, and leave the index and	// its own pool decodable without the dictionary.
+	opt := baseOptions(t, store)
+	opt.Dict = dict
+	if _, err := Load(ctx, opt); err != nil {
+		t.Fatalf("Load with a dictionary over a dict-free index: %v", err)
+	}
+	index, err := ReadPoolIndex(ctx, store, nil)
+	if err != nil {
+		t.Fatalf("read index without a dictionary: %v (reserved documents must stay dict-free)", err)
+	}
+	if _, ok := index.KGs["other-kp"]; !ok {
+		t.Errorf("the other graph's entry was dropped: %v", index.KGs)
+	}
+	if _, ok := index.KGs[slugV]; !ok {
+		t.Errorf("this run's entry is missing: %v", index.KGs)
+	}
+	if _, err := ReadPool(ctx, store, nil, slugV, "1.11.2"); err != nil {
+		t.Errorf("read pool without a dictionary: %v", err)
+	}
+}
+
+// The loud half: an index written with a dictionary this run does not carry must abort the
+// load rather than overwrite the shared document with a fresh index.
+func TestLoadFailsLoudlyWhenTheIndexCarriesAnUnknownDictionary(t *testing.T) {
+	dict := shippedDict(t)
+	store := cosmos.NewFake(nil)
+	ctx := context.Background()
+
+	seeded := codec.PoolIndex{Schema: codec.PoolIndexSchema, KGs: map[string]codec.KGPool{
+		"other-kp": {Versions: map[string]codec.VersionPool{"1.0.0": {Edges: 5, Sampled: 5}}},
+	}}
+	blob, err := codec.EncodeJSON(seeded, dict, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Seed(cosmos.Doc{ID: cosmos.RandomPoolID, Blob: blob, DictID: codec.DictID(dict)})
+
+	_, err = Load(ctx, baseOptions(t, store))
+	if err == nil {
+		t.Fatal("an index written with an unknown dictionary was clobbered")
+	}
+	if got := err.Error(); !contains(got, "dictionary") {
+		t.Errorf("error does not name the dictionary: %v", got)
+	}
+	stored, rerr := store.Read(ctx, cosmos.RandomPoolID)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if string(stored.Blob) != string(blob) {
+		t.Error("the failed load overwrote the index document")
+	}
+}
+
 func TestDryRunWritesNothing(t *testing.T) {
 	store := cosmos.NewFake(nil)
 	opt := baseOptions(t, store)

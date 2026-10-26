@@ -605,17 +605,23 @@ func writePool(ctx context.Context, o *Options, st *Stats) error {
 
 	// Merge with what an earlier load of this same key left, so re-running a release refills the
 	// sample instead of replacing it. Only this key's pool is read: other releases are untouched.
-	if existing, err := o.Store.Read(ctx, poolID); err == nil {
-		dict, derr := DictionaryFor(existing.DictID, o.Dict)
-		if derr == nil {
-			var old codec.Pool
-			if derr := codec.DecodeJSON(existing.Blob, dict, &old); derr == nil && old.Schema == codec.PoolSchema {
-				merged := newReservoir(len(ids), o.SampleSeed)
-				for _, id := range append(old.IDs, ids...) {
-					merged.offer(id)
-				}
-				ids = merged.snapshot()
+	// Like the index, a pool this run cannot decode is a loud error rather than a silent refill.
+	existing, err := o.Store.Read(ctx, poolID)
+	switch {
+	case errors.Is(err, cosmos.ErrNotFound):
+	case err != nil:
+		return fmt.Errorf("read random pool %s to merge the sample: %w", poolID, err)
+	default:
+		var old codec.Pool
+		if _, derr := decodeReserved(existing, o.Dict, &old); derr != nil {
+			return fmt.Errorf("random pool %s: %w", poolID, derr)
+		}
+		if old.Schema == codec.PoolSchema {
+			merged := newReservoir(len(ids), o.SampleSeed)
+			for _, id := range append(old.IDs, ids...) {
+				merged.offer(id)
 			}
+			ids = merged.snapshot()
 		}
 	}
 
@@ -625,11 +631,11 @@ func writePool(ctx context.Context, o *Options, st *Stats) error {
 		SampledAt: sampledAt,
 		IDs:       ids,
 	}
-	encoded, err := codec.EncodeJSON(pool, o.Dict, o.ZstdLevel)
+	encoded, err := codec.EncodeJSON(pool, nil, o.ZstdLevel)
 	if err != nil {
 		return fmt.Errorf("encode random pool: %w", err)
 	}
-	doc := cosmos.Doc{ID: poolID, Blob: encoded, DictID: o.dictID()}
+	doc := cosmos.Doc{ID: poolID, Blob: encoded}
 	if err := o.Store.Upsert(ctx, doc); err != nil {
 		return fmt.Errorf("store random pool %s: %w", poolID, err)
 	}
@@ -652,34 +658,57 @@ func writePoolIndex(ctx context.Context, o *Options, st *Stats, sampled int, sam
 	// list — decodes into an empty index and is replaced. That is the migration: the reload that
 	// writes this index is the same one that wipes the old documents.
 	//
-	// A read that FAILS is different, and must not fall through to the fresh index above: a
-	// throttled or transiently failed read would otherwise silently drop every other graph's
-	// entry and clobber the shared document — exactly the failure that once erased the index
-	// to one graph at the end of an otherwise successful load. ErrNotFound is the only error
-	// that means "nothing to preserve"; every other error fails the load loudly, and a rerun
-	// (idempotent, --no-repack) reaches this point again.
+	// Every other failure must not fall through to the fresh index above: a failed read, or an
+	// index this run cannot decode (written with a dictionary this run does not carry), would
+	// otherwise silently drop every other graph's entry and clobber the shared document — the
+	// failure that twice erased the index to one graph at the end of an otherwise successful
+	// load. ErrNotFound is the only error that means "nothing to preserve"; anything else fails
+	// the load loudly, and a rerun (idempotent, --no-repack) reaches this point again.
 	existing, err := o.Store.Read(ctx, cosmos.RandomPoolID)
 	switch {
 	case errors.Is(err, cosmos.ErrNotFound):
 	case err != nil:
 		return fmt.Errorf("read pool index to preserve other graphs: %w", err)
 	default:
-		if dict, derr := DictionaryFor(existing.DictID, o.Dict); derr == nil {
-			var old codec.PoolIndex
-			if derr := codec.DecodeJSON(existing.Blob, dict, &old); derr == nil && old.Schema == codec.PoolIndexSchema && old.KGs != nil {
-				index = old
-			}
+		if _, derr := decodeReserved(existing, o.Dict, &index); derr != nil {
+			return fmt.Errorf("pool index: %w", derr)
+		}
+		if index.Schema != codec.PoolIndexSchema {
+			index = codec.PoolIndex{Schema: codec.PoolIndexSchema, KGs: map[string]codec.KGPool{}}
 		}
 	}
 	index.Set(o.slug, o.versionLabel, st.sampler.offered(), sampled, sampledAt)
 
-	encoded, err := codec.EncodeJSON(index, o.Dict, o.ZstdLevel)
+	encoded, err := codec.EncodeJSON(index, nil, o.ZstdLevel)
 	if err != nil {
 		return fmt.Errorf("encode pool index: %w", err)
 	}
-	doc := cosmos.Doc{ID: cosmos.RandomPoolID, Blob: encoded, DictID: o.dictID()}
+	doc := cosmos.Doc{ID: cosmos.RandomPoolID, Blob: encoded}
 	if err := o.Store.Upsert(ctx, doc); err != nil {
 		return fmt.Errorf("store pool index: %w", err)
 	}
 	return nil
+}
+
+// decodeReserved decodes a reserved document (the pool index, a release pool) for the
+// read-modify-write path. Reserved documents are shared across graphs and are therefore
+// written WITHOUT a dictionary, so any load can read them regardless of the --dict it
+// compresses its own edges with; a stored dictionary id of 0 means exactly that. A document
+// written with a dictionary this run does not carry is a loud error, never a silent empty
+// decode: that path is what clobbered the shared index to whichever graph loaded last.
+// A document that decodes but carries a foreign schema (the pre-per-release formats) is the
+// documented migration and returns ok=false: the caller starts fresh and rewrites it.
+func decodeReserved(doc cosmos.Doc, current []byte, into any) (ok bool, err error) {
+	var dict []byte
+	switch stored := doc.DictID; {
+	case stored == 0:
+	case stored == codec.DictID(current):
+		dict = current
+	default:
+		return false, fmt.Errorf("written with dictionary %#x but this run carries %#x; pass that dictionary or repair the document", stored, codec.DictID(current))
+	}
+	if derr := codec.DecodeJSON(doc.Blob, dict, into); derr != nil {
+		return false, nil // legacy or unreadable shape: the documented replace-on-migration path
+	}
+	return true, nil
 }
