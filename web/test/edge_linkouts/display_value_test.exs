@@ -114,6 +114,49 @@ defmodule EdgeLinkouts.Display.ValueTest do
     end
   end
 
+  describe "{:number, field, :g4}" do
+    # General-format precision and notation; exact decimal ties use Erlang's rounding.
+    test "floats and integers use four significant digits" do
+      for {value, expected} <- [
+            {5.6767e-07, "5.677e-07"},
+            {6.276975374, "6.277"},
+            {0.947, "0.947"},
+            {-1.11, "-1.11"},
+            {1.0, "1"},
+            {0.0, "0"},
+            {0.0001, "0.0001"},
+            {1.234e-05, "1.234e-05"},
+            {123_456, "1.235e+05"},
+            {9_999.5, "1e+04"},
+            {99.995, "100"},
+            {1234.5, "1235"},
+            {100.25, "100.3"},
+            {1.0e100, "1e+100"},
+            {-2.5e-300, "-2.5e-300"},
+            {1.2345e-320, "1.235e-320"}
+          ] do
+        assert number(value, :g4) == expected, "#{inspect(value)}"
+      end
+    end
+
+    test "numeric strings are reformatted, inequalities kept, the rest verbatim" do
+      for {value, expected} <- [
+            {"7.8600e-06", "7.86e-06"},
+            {"1.0700e-04", "0.000107"},
+            {"3.2100e+02", "321"},
+            {"<1.00e-5", "<1e-05"},
+            {"<= 0.05", "<=0.05"},
+            {"1e-400", "1e-400"},
+            {"1e400", "1e400"},
+            {"0.0", "0"},
+            {"NA", "NA"},
+            {"", ""}
+          ] do
+        assert number(value, :g4) == expected, "#{inspect(value)}"
+      end
+    end
+  end
+
   describe "{:number, field, :int}" do
     test "rounds floats the way the legacy sprintf(\"%.0f\") did" do
       assert number(412.0, :int) == "412"

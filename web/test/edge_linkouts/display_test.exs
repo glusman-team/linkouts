@@ -61,6 +61,78 @@ defmodule EdgeLinkouts.DisplayTest do
     end)
   end
 
+  test "species phrases flow without a comma and link to NCBI Taxonomy", %{config: config} do
+    for {taxon, name, label} <- [
+          {"9606", "Homo sapiens (human)", "humans"},
+          {"9796", "Equus caballus (horse)", "horses"}
+        ] do
+      doc = %{
+        "subject_name" => "Azacitidine",
+        "subject" => "CHEBI:2038",
+        "object_name" => "refractory malignant neoplasm",
+        "object" => "MONDO:0004992",
+        "predicate" => "biolink:applied_to_treat",
+        "clinical_approval_status" => "off_label_use",
+        "species_context_qualifier" => "NCBITaxon:" <> taxon,
+        "supporting_text" => ["species_context_qualifier_name: " <> name]
+      }
+
+      segments = Display.edge(config, doc, "infores:drugapprovals-kp-1.25.1")
+      text = Segment.to_text(segments)
+      assert text =~ "refractory malignant neoplasm in #{label}."
+      refute text =~ ", in #{label}"
+
+      assert {:link, "https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=" <> taxon,
+              label} in segments
+    end
+  end
+
+  test "the ICD-10-CM supporting source is named, not printed as a CURIE", %{config: config} do
+    doc = %{
+      "subject_name" => "Mesalamine",
+      "subject" => "CHEBI:6775",
+      "object_name" => "ulcerative colitis",
+      "object" => "MONDO:0005101",
+      "predicate" => "biolink:applied_to_treat",
+      "sources" => [
+        %{
+          "resource_id" => "infores:drugapprovals-kp",
+          "resource_role" => "primary_knowledge_source"
+        },
+        %{"resource_id" => "infores:icd10cm", "resource_role" => "supporting_data_source"}
+      ]
+    }
+
+    segments = Display.methods(config, doc, "infores:drugapprovals-kp-1.25.1")
+    text = Segment.to_text(segments)
+    assert text =~ "the ICD-10-CM Table of Drugs and Chemicals"
+    refute text =~ "infores:icd10cm"
+
+    assert {:link, "https://biolink.github.io/information-resource-registry/resources/icd10cm/",
+            "the ICD-10-CM Table of Drugs and Chemicals"} in Segment.flatten(segments)
+  end
+
+  test "Multiomics KP node prefixes all resolve to linkouts" do
+    for {curie, url} <- [
+          {"DOID:13209", "https://disease-ontology.org/term/DOID:13209"},
+          {"CL:0000841",
+           "https://www.ebi.ac.uk/ols4/ontologies/cl/classes?short_form=CL_0000841"},
+          {"WormBase:WBGene00003491",
+           "https://wormbase.org/species/c_elegans/gene/WBGene00003491"},
+          {"SGD:S000029674", "https://www.yeastgenome.org/locus/S000029674"},
+          {"PANTHER.PATHWAY:P00013",
+           "http://www.pantherdb.org/pathway/pathwayDiagram.jsp?catAccession=P00013"},
+          {"HGNC.FAMILY:679", "https://www.genenames.org/data/genegroup/#!/group/679"},
+          {"ComplexPortal:CPX-6016", "https://www.ebi.ac.uk/complexportal/complex/CPX-6016"},
+          {"DrugCentral:5160", "https://drugcentral.org/drugcard/5160"},
+          {"RXCUI:1153923",
+           "https://mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm=1153923"},
+          {"REACT:R-HSA-191273", "https://reactome.org/content/detail/R-HSA-191273"}
+        ] do
+      assert EdgeLinkouts.Display.Prefixes.url(curie) == url
+    end
+  end
+
   describe "config loading" do
     test "the drug approvals KG has a config" do
       config = Display.get("infores:drugapprovals-kp")

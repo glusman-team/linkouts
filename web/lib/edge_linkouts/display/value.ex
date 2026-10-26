@@ -17,7 +17,7 @@ defmodule EdgeLinkouts.Display.Value do
         {:pick, :field, %{value => spec, default: spec}}
                                                    choose a spec by field value
         {:url, "https://…{field}", label}          a link whose URL is built from fields
-        {:number, :field, :sig2 | :int}            a number formatted to 2 sig digits / integer
+        {:number, :field, :sig2 | :g4 | :int}      a number: 2 sig digits / printf %.4g / integer
         {:humanize, :field}                        "biolink:correlated_with" -> "correlated with"
         {:count, :field}                           the length of a list
         {:default, :field, fallback}               fallback when the field is absent or empty
@@ -60,7 +60,7 @@ defmodule EdgeLinkouts.Display.Value do
           | {:pick, atom() | String.t(),
              %{optional(String.t()) => spec(), optional(:default) => spec()}}
           | {:url, String.t(), spec()}
-          | {:number, atom() | String.t(), :sig2 | :int}
+          | {:number, atom() | String.t(), :sig2 | :g4 | :int}
           | {:humanize, atom() | String.t()}
           | {:count, atom() | String.t()}
           | {:default, atom() | String.t(), spec()}
@@ -183,7 +183,7 @@ defmodule EdgeLinkouts.Display.Value do
   def render({:number, name, format}, ctx) do
     case fetch(ctx, name) do
       nil -> []
-      value -> [Segment.text(format_number(value, format))]
+      value -> value |> format_number(format) |> Segment.text() |> List.wrap()
     end
   end
 
@@ -652,14 +652,62 @@ defmodule EdgeLinkouts.Display.Value do
     end
   end
 
+  # printf-style "%.4g": four significant digits (Erlang rounds exact decimal ties away
+  # from zero, unlike Python's half-even rounding),
+  # scientific notation when the exponent is below -4 or at least 4, trailing zeros dropped,
+  # a signed two-digit exponent ("5.677e-07", "1.235e+05"). Numeric strings are formatted too,
+  # since some sources store p-values as text; an inequality keeps its operator ("<1e-05").
+  defp format_number(value, :g4) when is_integer(value), do: g4(value * 1.0)
+  defp format_number(value, :g4) when is_float(value), do: g4(value)
+
+  defp format_number(value, :g4) when is_binary(value) do
+    with [_, op, number] <- Regex.run(~r/^\s*(<=|>=|<|>|=)?\s*(\S+)\s*$/, value),
+         {float, ""} <- Float.parse(number),
+         false <- underflowed?(float, number) do
+      op <> g4(float)
+    else
+      _ -> value
+    end
+  end
+
+  defp format_number(value, :g4), do: stringify(value) || ""
+
   defp format_number(value, :sig2) when is_integer(value), do: Integer.to_string(value)
   # A source that spells a missing number "NA" must not become "0" or crash the render.
   defp format_number(value, :sig2), do: stringify(value) || ""
 
   defp format_number(_value, other) do
     raise ArgumentError,
-          "unsupported {:number, field, #{inspect(other)}} format; expected :sig2 or :int"
+          "unsupported {:number, field, #{inspect(other)}} format; expected :sig2, :g4 or :int"
   end
+
+  # The %.4g exponent is the one scientific notation shows after rounding to four digits
+  # (9999.5 rounds to 1.000e+04, so it prints as "1e+04", not "9999").
+  defp g4(value) do
+    scientific = :erlang.float_to_binary(value, scientific: 3)
+    [mantissa, exponent] = String.split(scientific, "e")
+    exponent = String.to_integer(exponent)
+
+    if exponent < -4 or exponent >= 4 do
+      sign = if exponent < 0, do: "-", else: "+"
+      digits = exponent |> abs() |> Integer.to_string() |> String.pad_leading(2, "0")
+      strip_fraction_zeros(mantissa) <> "e" <> sign <> digits
+    else
+      value |> :erlang.float_to_binary(decimals: 3 - exponent) |> strip_fraction_zeros()
+    end
+  end
+
+  defp strip_fraction_zeros(digits) do
+    if String.contains?(digits, ".") do
+      digits |> String.trim_trailing("0") |> String.trim_trailing(".")
+    else
+      digits
+    end
+  end
+
+  # Float.parse("1e-400") is {0.0, ""}: a nonzero p-value below the double range must not
+  # print as "0", so it stays as the source wrote it.
+  defp underflowed?(float, text), do: float == 0.0 and Regex.match?(~r/^[^eE]*[1-9]/, text)
 
   # Decimals needed for two significant digits at this magnitude: 0.123 -> 2, 0.0123 -> 3, 12.3 -> 0.
   defp significant_decimals(magnitude) when magnitude == 0.0, do: 0

@@ -52,6 +52,20 @@
     "GTOPDB" => "https://www.guidetopharmacology.org/GRAC/ObjectDisplayForward?objectId=$value",
     "PANTHER.FAMILY" => "http://www.pantherdb.org/panther/family.do?clsAccession=$value",
     "OMIM" => "https://omim.org/entry/$value",
+    # The rest of the Multiomics KP 3.1.3 node prefixes (full scan of the nodes file,
+    # 2026-10-22). Verified to resolve for a real id; WormBase and PANTHER 403 for
+    # non-browser agents only.
+    "DOID" => "https://disease-ontology.org/term/$curie",
+    "CL" => "https://www.ebi.ac.uk/ols4/ontologies/cl/classes?short_form=CL_$value",
+    "WORMBASE" => "https://wormbase.org/species/c_elegans/gene/$value",
+    "SGD" => "https://www.yeastgenome.org/locus/$value",
+    "PANTHER.PATHWAY" =>
+      "http://www.pantherdb.org/pathway/pathwayDiagram.jsp?catAccession=$value",
+    "HGNC.FAMILY" => "https://www.genenames.org/data/genegroup/#!/group/$value",
+    "COMPLEXPORTAL" => "https://www.ebi.ac.uk/complexportal/complex/$value",
+    "DRUGCENTRAL" => "https://drugcentral.org/drugcard/$value",
+    "RXCUI" => "https://mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm=$value",
+    "REACT" => "https://reactome.org/content/detail/$value",
     # DailyMed SPL ids arrive as "dailymed:<uuid>" in the drug approvals KG.
     "DAILYMED" => "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=$value",
     # DrugBank drug ids arrive on DAKP edges whose subject the node join named from DrugBank.

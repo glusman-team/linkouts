@@ -120,6 +120,16 @@
          :default => {:humanize, "statistical_significance_qualifier"}
        }},
 
+    # Statistics in printf "%.4g": four significant digits, scientific notation outside
+    # 1e-4..1e4 ("5.677e-07"). Effect sizes are JSON doubles carrying up to 17 digits;
+    # p values are strings in this build (the dataset card: inequality notation is
+    # preserved), and {:number, _, :g4} formats numeric strings and keeps a leading
+    # inequality operator, so all three read alike. A value that does not parse as a
+    # number, or would underflow a double (1e-400), renders as the source wrote it.
+    "effect_size_g4" => {:number, "effect_size", :g4},
+    "p_value_g4" => {:number, "p_value", :g4},
+    "adjusted_p_value_g4" => {:number, "adjusted_p_value", :g4},
+
     # Direction/aspect qualifiers: the observed domains are expression/activity/abundance
     # (subject aspect) and increased/decreased (both directions), so humanizing is the
     # prose already.
@@ -251,20 +261,20 @@
   # document cannot support; the renderer joins what survives into one paragraph.
   evidence: [
     %{
-      # p_value and adjusted_p_value are strings in this build (the dataset card: inequality
-      # notation is preserved), so they are rendered verbatim, never through {:number}.
+      # Every statistic reads in printf %.4g ({effect_size_g4} and friends): effect sizes
+      # arrive as raw doubles ("6.276975374"), p values as strings in mixed precision.
       value:
         {:if, [{:present, "effect_type"}],
-         "The reported effect size is {effect_size} ({effect_type_prose}).",
-         "The reported effect size is {effect_size}."},
+         "The reported effect size is {effect_size_g4} ({effect_type_prose}).",
+         "The reported effect size is {effect_size_g4}."},
       if: [{:present, "effect_size"}]
     },
     %{
-      value: "The reported p value is {p_value}.",
+      value: "The reported p value is {p_value_g4}.",
       if: [{:present, "p_value"}]
     },
     %{
-      value: "The adjusted p value is {adjusted_p_value}.",
+      value: "The adjusted p value is {adjusted_p_value_g4}.",
       if: [{:present, "adjusted_p_value"}]
     },
     %{

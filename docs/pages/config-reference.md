@@ -94,11 +94,18 @@ The part of a CURIE after its prefix: `biolink:applied_to_treat` renders as `app
 The biolink model's docs name every term's page by this local id, so a slot pair can turn a
 stored predicate into a link at the term's own documentation page.
 
-### `{:number, name, :sig2 | :int}`
+### `{:number, name, :sig2 | :g4 | :int}`
 
 `:sig2` gives two significant digits: `0.123456` becomes `0.12`. Very small and very large values
 use scientific notation (`1.2e-9`). `:int` rounds to the nearest whole number. A value that is not
 a number is shown as given.
+
+`:g4` uses printf-style `%.4g`: four significant digits, scientific
+notation when the exponent is below -4 or at least 4, trailing zeros dropped. `5.6767e-07` becomes
+`5.677e-07`, `6.276975374` becomes `6.277`, `123456` becomes `1.235e+05`. Exact decimal ties
+round away from zero (`1234.5` becomes `1235`), unlike Python's half-even rounding. Numeric strings are
+formatted too, keeping a leading inequality (`"<1.00e-5"` becomes `<1e-05`). A string that does
+not parse, or a nonzero value below the double range (`"1e-400"`), is shown as given.
 
 Placeholders such as `"NA"` never reach a config. The CLI drops them at ingest (see
 [Storage format](storage-format.md)), so a missing number is an absent field. Gate on it with

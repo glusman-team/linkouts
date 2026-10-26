@@ -382,10 +382,10 @@ defmodule EdgeLinkouts.Display.Config do
     do: ["#{where}: {:pick, name, branches_map} expected, got #{inspect(other)}"]
 
   def spec_problems({:number, name, format}, _where)
-      when (is_binary(name) or is_atom(name)) and format in [:sig2, :int], do: []
+      when (is_binary(name) or is_atom(name)) and format in [:sig2, :g4, :int], do: []
 
   def spec_problems({:number, _, _} = other, where),
-    do: ["#{where}: {:number, field, :sig2 | :int} expected, got #{inspect(other)}"]
+    do: ["#{where}: {:number, field, :sig2 | :g4 | :int} expected, got #{inspect(other)}"]
 
   def spec_problems({tag, name}, _where)
       when tag in [:humanize, :count, :local, :names] and (is_binary(name) or is_atom(name)),

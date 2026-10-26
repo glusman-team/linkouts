@@ -119,6 +119,11 @@
            {:url,
             "https://www.canada.ca/en/health-canada/services/drugs-health-products/medeffect-canada/adverse-reaction-database.html",
             "Canada Vigilance Adverse Reaction Database"},
+         # From 1.25.0 the ICD-10-CM Table of Drugs and Chemicals screens observed-use
+         # subjects (the RIG's filtered_content), so applied_to_treat edges cite it.
+         "infores:icd10cm" =>
+           {:url, "https://biolink.github.io/information-resource-registry/resources/icd10cm/",
+            "the ICD-10-CM Table of Drugs and Chemicals"},
          :default => {:link, "resource_id", "resource_id"}
        }},
     # The legacy page printed approval statuses verbatim ("off_label_use"). Naming them in plain
@@ -143,13 +148,18 @@
     # ("Equus caballus (horse)", the organismtaxon.txt 2026jul22 wording, verified over all
     # eleven taxa in 1.25.1). The binomial is a label, not a phrase a reader says, so each
     # name rewords to the common plural the sentence needs: "... has been approved for
-    # treating Insomnia, in horses." Cattle and sheep plural as themselves. A name the map
+    # treating Insomnia in horses." Cattle and sheep plural as themselves. A name the map
     # does not list renders verbatim rather than disappearing, and a release without the
     # name line falls back to the linked CURIE chip.
     "species_qualifier_link" => {:link, "species_context_qualifier", "species_context_qualifier"},
-    "qualifier_species" =>
-      {:if, [{:present, "species_context_qualifier"}],
-       {:supporting, "species_context_qualifier_name", ", in ", "", %{
+    "species_local" => {:local, "species_context_qualifier"},
+    "species_link" =>
+      {:url, "https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id={species_local}",
+       "{species_name}"},
+    "qualifier_species" => {:if, [{:present, "species_context_qualifier"}], " in {species_link}"},
+    "species_name" =>
+      {:supporting, "species_context_qualifier_name", "", "",
+       %{
          "homo sapiens (human)" => "humans",
          "canis lupus familiaris (dog)" => "dogs",
          "felis catus (domestic cat)" => "cats",
@@ -161,7 +171,7 @@
          "oryctolagus cuniculus (rabbit)" => "rabbits",
          "gallus gallus (chicken)" => "chickens",
          "meleagris gallopavo (turkey)" => "turkeys"
-       }, ", in {species_qualifier_link}"}},
+       }, "{species_context_qualifier}"},
 
     # Inside a {:list, ...} element "self" is the element itself, so {:local, "self"} is the
     # element's id past its prefix — the exact SPL set id, shown and linked, where the legacy
