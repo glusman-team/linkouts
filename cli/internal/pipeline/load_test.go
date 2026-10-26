@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -405,6 +406,50 @@ func TestLoadGivesUpWhenThrottleOutlastsRetries(t *testing.T) {
 	if !cosmos.IsThrottled(err) {
 		t.Errorf("error %v should still read as throttled", err)
 	}
+}
+
+// The index write preserves every other graph's entry, and a read of the shared index that
+// fails for a transient reason (throttle, network) must abort the load rather than clobber
+// the document down to this run's graph alone — the bug that once erased every other graph
+// from the home page at the end of an otherwise successful load.
+func TestLoadFailsLoudlyWhenTheIndexReadFails(t *testing.T) {
+	store := cosmos.NewFake(nil)
+	opt := baseOptions(t, store)
+	if _, err := Load(context.Background(), opt); err != nil {
+		t.Fatalf("first Load: %v", err)
+	}
+
+	indexThrottle := &indexReadThrottle{Store: store}
+	indexThrottle.fail.Store(true)
+	_, err := Load(context.Background(), baseOptions(t, indexThrottle))
+	if err == nil {
+		t.Fatal("a failed index read was tolerated; the load would have clobbered the shared index")
+	}
+	if !strings.Contains(err.Error(), "pool index") {
+		t.Errorf("error %v should name the pool index read", err)
+	}
+
+	// The failed load wrote nothing: the index still describes the first run.
+	index, err := ReadPoolIndex(context.Background(), store, nil)
+	if err != nil {
+		t.Fatalf("read index after failure: %v", err)
+	}
+	if releases := Releases(index, slugV); len(releases) == 0 {
+		t.Errorf("index no longer lists the first run's releases")
+	}
+}
+
+// indexReadThrottle fails only reads of the reserved index document, and only while armed.
+type indexReadThrottle struct {
+	cosmos.Store
+	fail atomic.Bool
+}
+
+func (i *indexReadThrottle) Read(ctx context.Context, id string) (cosmos.Doc, error) {
+	if id == cosmos.RandomPoolID && i.fail.Load() {
+		return cosmos.Doc{}, fmt.Errorf("429: %w", cosmos.ErrThrottled)
+	}
+	return i.Store.Read(ctx, id)
 }
 
 func TestDryRunWritesNothing(t *testing.T) {

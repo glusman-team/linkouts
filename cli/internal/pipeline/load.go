@@ -651,9 +651,20 @@ func writePoolIndex(ctx context.Context, o *Options, st *Stats, sampled int, sam
 	// A leftover pool/1 document at this id — the pre-per-release format, which held a flat id
 	// list — decodes into an empty index and is replaced. That is the migration: the reload that
 	// writes this index is the same one that wipes the old documents.
-	if existing, err := o.Store.Read(ctx, cosmos.RandomPoolID); err == nil {
-		dict, derr := DictionaryFor(existing.DictID, o.Dict)
-		if derr == nil {
+	//
+	// A read that FAILS is different, and must not fall through to the fresh index above: a
+	// throttled or transiently failed read would otherwise silently drop every other graph's
+	// entry and clobber the shared document — exactly the failure that once erased the index
+	// to one graph at the end of an otherwise successful load. ErrNotFound is the only error
+	// that means "nothing to preserve"; every other error fails the load loudly, and a rerun
+	// (idempotent, --no-repack) reaches this point again.
+	existing, err := o.Store.Read(ctx, cosmos.RandomPoolID)
+	switch {
+	case errors.Is(err, cosmos.ErrNotFound):
+	case err != nil:
+		return fmt.Errorf("read pool index to preserve other graphs: %w", err)
+	default:
+		if dict, derr := DictionaryFor(existing.DictID, o.Dict); derr == nil {
 			var old codec.PoolIndex
 			if derr := codec.DecodeJSON(existing.Blob, dict, &old); derr == nil && old.Schema == codec.PoolIndexSchema && old.KGs != nil {
 				index = old
