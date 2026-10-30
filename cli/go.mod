@@ -7,7 +7,7 @@ toolchain go1.26.8
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3
 	github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos v1.5.0
-	github.com/bytedance/sonic v1.15.4
+	github.com/bytedance/sonic v1.15.5
 	github.com/chdb-io/chdb-go/lib/embedded v0.260703.1
 	github.com/chdb-io/chdb-go/v2 v2.2.0
 	github.com/klauspost/compress v1.20.3
@@ -19,7 +19,7 @@ require (
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
-	github.com/bytedance/sonic/loader v0.5.2 // indirect
+	github.com/bytedance/sonic/loader v0.5.3 // indirect
 	github.com/chdb-io/chdb-go/lib/darwin-amd64 v0.260703.1 // indirect
 	github.com/chdb-io/chdb-go/lib/darwin-arm64 v0.260703.1 // indirect
 	github.com/chdb-io/chdb-go/lib/linux-amd64 v0.260703.1 // indirect
