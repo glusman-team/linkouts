@@ -14,6 +14,7 @@ defmodule EdgeLinkouts.Display.Value do
         {:link, :name_field, :curie_field}         a CURIE linkout (label + href)
         {:list, inner, separator}                  each element of a list field, joined
         {:list, inner, separator, max, "and"}      capped, conjunct list ("A and B" / "A, B, and C")
+        {:preview, field, inner, separator, max}     only the first max items; no hidden payload
         {:pick, :field, %{value => spec, default: spec}}
                                                    choose a spec by field value
         {:url, "https://…{field}", label}          a link whose URL is built from fields
@@ -57,6 +58,7 @@ defmodule EdgeLinkouts.Display.Value do
           | {:list, atom() | String.t(), spec(), String.t()}
           | {:list, atom() | String.t(), spec(), String.t(), pos_integer()}
           | {:list, atom() | String.t(), spec(), String.t(), pos_integer(), String.t()}
+          | {:preview, atom() | String.t(), spec(), String.t(), pos_integer()}
           | {:pick, atom() | String.t(),
              %{optional(String.t()) => spec(), optional(:default) => spec()}}
           | {:url, String.t(), spec()}
@@ -148,6 +150,25 @@ defmodule EdgeLinkouts.Display.Value do
   def render({:list, name, inner, separator, max, conjunction}, ctx)
       when is_integer(max) and max > 0 and is_binary(conjunction),
       do: render_list(name, inner, separator, max, conjunction, ctx)
+
+  # A preview is a hard display bound, not a fold: large lists stay out of the initial HTML
+  # instead of merely moving behind a disclosure. Configs pair it with {:count, name} and
+  # point readers at the KGX download when the unabridged values matter.
+  def render({:preview, name, inner, separator, max}, ctx)
+      when is_integer(max) and max > 0 and is_binary(separator) do
+    case fetch(ctx, name) do
+      values when is_list(values) and values != [] ->
+        values
+        |> Stream.map(&render_element(&1, inner, ctx))
+        |> Stream.reject(&(&1 == []))
+        |> Enum.take(max)
+        |> interleave(Segment.text(separator))
+        |> Segment.join()
+
+      _ ->
+        []
+    end
+  end
 
   # {:strong, inner}: emphasis — rendered louder than the surrounding prose. Used for the
   # primary knowledge source in a source list, where bold carries the distinction a
@@ -378,7 +399,8 @@ defmodule EdgeLinkouts.Display.Value do
 
     Valid forms are a template string, {:field, name}, {:link, label_field, curie_field},
     {:list, name, inner, separator}, {:list, name, inner, separator, max}, {:list, name,
-    inner, separator, max, conjunction}, {:names, field}, {:names, field, prefix, suffix},
+    inner, separator, max, conjunction}, {:preview, name, inner, separator, max},
+    {:names, field}, {:names, field, prefix, suffix},
     {:compound, clauses}, {:fold, label, inner}, {:strong, inner}, {:pick,
     name, branches}, {:local, name} and {:if, conditions, then, else}.
     `mix linkouts.check` reports this at build time rather than on a page view.

@@ -68,6 +68,18 @@ Renders `inner` once per element of a list field. A scalar element is available 
 {:list, "sources", "{resource_id}", ", "}                 # list of KGX source maps
 ```
 
+### `{:preview, name, inner, separator, max}`
+
+Renders only the first `max` nonempty elements, joined by `separator`. Unlike a capped
+`{:list, ...}`, it emits no hidden `Show more` payload, so the initial HTML stays bounded when
+an edge carries thousands of values. Pair it with `{:count, name}` to report the full total and
+keep the complete values available through the page's KGX download. Empty and missing lists
+render nothing.
+
+```elixir
+{:preview, "publications", {:link, "self", "self"}, ", ", 3}
+```
+
 ### `{:pick, name, branches}`
 
 Chooses a spec by the field's value. `:default` is used for any value not listed and for a

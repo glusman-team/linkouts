@@ -1,7 +1,7 @@
 defmodule EdgeLinkouts.Display.ValueTest do
   use ExUnit.Case, async: true
 
-  alias EdgeLinkouts.Display.{Segment, Value}
+  alias EdgeLinkouts.Display.{Config, Segment, Value}
 
   defp or_query_ctx(doc) do
     %{doc: doc, version: "kg-1.0.0", slots: %{}, aliases: %{}}
@@ -229,6 +229,69 @@ defmodule EdgeLinkouts.Display.ValueTest do
 
       assert Segment.to_text(segments) ==
                "dailymed:a1, dailymed:b2, dailymed:c3, dailymed:d4, dailymed:e5"
+    end
+  end
+
+  describe "{:preview, field, inner, separator, max}" do
+    test "only the first max items are rendered, with no hidden fold payload" do
+      ctx = %{
+        doc: %{"ps" => ["dailymed:a1", "dailymed:b2", "dailymed:c3", "dailymed:d4"]},
+        version: "kg-1.0.0",
+        slots: %{},
+        aliases: %{}
+      }
+
+      segments = Value.render({:preview, "ps", {:field, "self"}, ", ", 2}, ctx)
+
+      assert Segment.to_text(segments) == "dailymed:a1, dailymed:b2"
+      assert Segment.flatten(segments) == segments
+      refute Enum.any?(segments, &match?({:more, _}, &1))
+    end
+
+    test "short, empty, and missing lists render without a placeholder" do
+      ctx = %{doc: %{"ps" => ["dailymed:a1"]}, version: "kg-1.0.0", slots: %{}, aliases: %{}}
+
+      assert Value.render({:preview, "ps", {:field, "self"}, ", ", 3}, ctx)
+             |> Segment.to_text() == "dailymed:a1"
+
+      assert Value.render({:preview, "ps", {:field, "self"}, ", ", 3}, %{ctx | doc: %{}}) == []
+
+      assert Value.render({:preview, "ps", {:field, "self"}, ", ", 3}, %{ctx | doc: %{"ps" => []}}) ==
+               []
+    end
+  end
+
+  describe "preview validation" do
+    test "invalid bounds and fields name the preview form" do
+      for max <- [0, -1, 1.5, nil] do
+        assert [message] =
+                 Config.spec_problems(
+                   {:preview, "publications", "{self}", ", ", max},
+                   "value"
+                 )
+
+        assert message =~ "{:preview, field, inner, separator, max} expected"
+      end
+
+      assert [message] =
+               Config.spec_problems({:preview, 123, "{self}", ", ", 3}, "value")
+
+      assert message == "value: {:preview, ...} needs a field name"
+
+      assert [message] = Config.spec_problems({:preview, "p", "{self}", nil, 3}, "value")
+      assert message == "value: {:preview, ...} separator must be a string"
+    end
+
+    test "slot discovery and undefined-slot checks traverse the preview inner spec" do
+      {:ok, config} =
+        Config.new(%{
+          name: "preview-test",
+          edge: "{items}",
+          slots: %{"items" => {:preview, "publications", "{label}", ", ", 3}}
+        })
+
+      assert "label" in Config.referenced_names(config)
+      assert "label" in Config.undefined_slots(config)
     end
   end
 

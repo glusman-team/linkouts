@@ -312,6 +312,17 @@ defmodule EdgeLinkouts.Display.Config do
   def spec_problems({:link, _, _} = other, where),
     do: ["#{where}: {:link, label_field, curie_field} expected, got #{inspect(other)}"]
 
+  def spec_problems({:preview, name, inner, separator, max}, where)
+      when is_integer(max) and max > 0 do
+    list_problems(name, inner, separator, max, where, :preview)
+  end
+
+  def spec_problems({:preview, _, _, _, _} = other, where) do
+    [
+      "#{where}: {:preview, field, inner, separator, max} expected, got #{inspect(other)}"
+    ]
+  end
+
   def spec_problems({:list, name, inner, separator}, where) do
     list_problems(name, inner, separator, nil, where)
   end
@@ -477,11 +488,11 @@ defmodule EdgeLinkouts.Display.Config do
 
   def spec_problems(other, where), do: ["#{where}: unsupported spec #{inspect(other)}"]
 
-  # Shared checks for the capped and uncapped list forms; :max only changes the fold.
-  defp list_problems(name, inner, separator, _max, where) do
+  # Shared checks for list and preview forms; :max controls folding or the display bound.
+  defp list_problems(name, inner, separator, _max, where, tag \\ :list) do
     cond do
-      not (is_binary(name) or is_atom(name)) -> ["#{where}: {:list, ...} needs a field name"]
-      not is_binary(separator) -> ["#{where}: {:list, ...} separator must be a string"]
+      not (is_binary(name) or is_atom(name)) -> ["#{where}: {:#{tag}, ...} needs a field name"]
+      not is_binary(separator) -> ["#{where}: {:#{tag}, ...} separator must be a string"]
       true -> spec_problems(inner, "#{where}.inner")
     end
   end
@@ -675,6 +686,7 @@ defmodule EdgeLinkouts.Display.Config do
   defp collect_spec_slots({:list, _name, inner, _sep}), do: collect_spec_slots(inner)
   defp collect_spec_slots({:list, _name, inner, _sep, _max}), do: collect_spec_slots(inner)
   defp collect_spec_slots({:list, _name, inner, _sep, _max, _conj}), do: collect_spec_slots(inner)
+  defp collect_spec_slots({:preview, _name, inner, _sep, _max}), do: collect_spec_slots(inner)
 
   defp collect_spec_slots({:pick, _name, branches}) when is_map(branches) do
     Enum.flat_map(Map.values(branches), &collect_spec_slots/1)
