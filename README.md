@@ -1,5 +1,19 @@
 # linkouts
 
+> **Deprecated: this repository has moved.**
+>
+> The edge linkout service is no longer developed here. It now lives in the
+> [glusman-team/graph-monorepo](https://github.com/glusman-team/graph-monorepo) monorepo,
+> which carries the current code, issue tracker, releases and deployments.
+>
+> - All new work, bug reports and pull requests belong in
+>   [glusman-team/graph-monorepo](https://github.com/glusman-team/graph-monorepo).
+> - This repo (`glusman-team/linkouts`) is retained for historical reference only and will
+>   not receive fixes, dependency updates or new deployments.
+> - Any links to `glusman-team/linkouts` point at the retired repo.
+>
+> Everything below describes the last state of the standalone service.
+
 Human-readable pages for individual knowledge-graph edges. Give it an edge UUID and it
 shows what the edge asserts, the evidence behind it, where it came from, and how it
 changed across KG releases.
